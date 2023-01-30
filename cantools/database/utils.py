@@ -109,7 +109,13 @@ def decode_data(data: bytes,
                 ) -> SignalDictType:
 
     actual_length = len(data)
-    if allow_truncated and actual_length < expected_length:
+
+    is_variable_field_size = False
+    for field in fields:
+        if field.qty == 'field' and field.minimum != field.maximum:
+            is_variable_field_size = True
+
+    if allow_truncated and actual_length < expected_length or is_variable_field_size:
         data = data.ljust(expected_length, b"\xFF")
 
     unpacked = {
@@ -117,7 +123,7 @@ def decode_data(data: bytes,
         **formats.little_endian.unpack(bytes(data[::-1])),
     }
 
-    if allow_truncated and actual_length < expected_length:
+    if allow_truncated and actual_length < expected_length or is_variable_field_size:
         # remove fields that are outside available data bytes
         valid_bit_count = actual_length * 8
         for field in fields:
@@ -130,7 +136,11 @@ def decode_data(data: bytes,
                 sequential_startbit = (8 * (field.start // 8)) + (7 - (field.start % 8))
 
             if sequential_startbit + field.length > valid_bit_count:
-                del unpacked[field.name]
+                if field.qty == 'field':
+                    max_possible_len = min(field.maximum, actual_length - sequential_startbit//8)
+                    unpacked[field.name] = unpacked[field.name][:max_possible_len]
+                else:
+                    del unpacked[field.name]
 
     decoded = {}
     for field in fields:
@@ -144,7 +154,7 @@ def decode_data(data: bytes,
                 except (KeyError, TypeError):
                     pass
 
-            if scaling:
+            if scaling and field.qty == 'atom':
                 decoded[field.name] = field.scale * value + field.offset
                 continue
             else:
@@ -161,12 +171,21 @@ def create_encode_decode_formats(datas: Sequence[Union["Data", "Signal"]], numbe
     format_length = (8 * number_of_bytes)
 
     def get_format_string_type(data: Union["Data", "Signal"]) -> str:
-        if data.is_float:
-            return 'f'
-        elif data.is_signed:
-            return 's'
+        if data.qty == 'atom':
+            if data.is_float:
+                return 'f'
+            elif data.is_signed:
+                return 's'
+            else:
+                return 'u'
+        elif data.qty == 'field':
+            if data.encoding == 'asc':
+                return 't'
+            else:
+                return 'r'
         else:
-            return 'u'
+            # unknown quantity entry - interpret as raw bytes
+            return 'r'
 
     def padding_item(length: int) -> Tuple[str, str, None]:
         fmt = 'p{}'.format(length)

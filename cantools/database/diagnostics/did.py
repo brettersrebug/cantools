@@ -117,7 +117,7 @@ class Did(object):
 
         """
 
-        return decode_data(data[:self._length],
+        return decode_data(data,
                            self.length,
                            self._codec['datas'],
                            self._codec['formats'],

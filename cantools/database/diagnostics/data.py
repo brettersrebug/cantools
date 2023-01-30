@@ -21,6 +21,9 @@ class Data(object):
                  maximum: Optional[float] = None,
                  unit: Optional[str] = None,
                  choices: Optional[Choices] = None,
+                 encoding: str = "",
+                 data_format: str = "",
+                 qty: str = ""
                  ) -> None:
         #: The data name as a string.
         self.name: str = name
@@ -35,19 +38,31 @@ class Data(object):
         self.start: int = start
 
         #: The length of the data in bits.
-        self.length = length
+        if qty == 'field' and maximum:
+            self.length = maximum * 8
+        else:
+            self.length = length
 
         #: Data byte order as ``'little_endian'`` or ``'big_endian'``.
         self.byte_order: ByteOrder = byte_order
 
-        #: The minimum value of the data, or ``None`` if unavailable.
+        #: The minimum bytes of the data, or ``None`` if unavailable.
         self.minimum: Optional[float] = minimum
 
-        #: The maximum value of the data, or ``None`` if unavailable.
+        #: The maximum bytes of the data, or ``None`` if unavailable.
         self.maximum: Optional[float] = maximum
 
         #: The unit of the data as a string, or ``None`` if unavailable.
         self.unit = unit
+
+        #: The data_format of the data as a string 'hex', 'text', 'flt', 'dec'
+        self.data_format = data_format
+
+        #: The encoding of the data as a string 'asc', 'uns', 'dbl',
+        self.encoding = encoding
+
+        #: The quantity of the data as a string 'atom', 'field', or ``None`` if unavailable.
+        self.qty = qty
 
         #: A dictionary mapping data values to enumerated choices, or ``None``
         #: if unavailable.
@@ -75,7 +90,7 @@ class Data(object):
                 ["{}: '{}'".format(value, text)
                  for value, text in self.choices.items()]))
 
-        return "data('{}', {}, {}, '{}', {}, {}, {}, {}, '{}', {})".format(
+        return "data('{}', {}, {}, '{}', {}, {}, {}, {}, '{}', {}, '{}', '{}', '{}')".format(
             self.name,
             self.start,
             self.length,
@@ -85,4 +100,7 @@ class Data(object):
             self.minimum,
             self.maximum,
             self.unit,
-            choices)
+            choices,
+            self.data_format,
+            self.encoding,
+            self.qty)

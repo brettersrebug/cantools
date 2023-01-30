@@ -26,7 +26,9 @@ class DataType(object):
                  byte_order,
                  unit,
                  factor,
-                 offset):
+                 offset,
+                 data_format,
+                 qty):
         self.name = name
         self.id_ = id_
         self.bit_length = bit_length
@@ -38,6 +40,8 @@ class DataType(object):
         self.unit = unit
         self.factor = factor
         self.offset = offset
+        self.data_format = data_format
+        self.qty = qty
 
 
 def _load_choices(data_type):
@@ -76,9 +80,11 @@ def _load_data_types(ecu_doc):
         factor = 1
         offset = 0
         bit_length = None
+        data_format = None
         encoding = None
         minimum = None
         maximum = None
+        qty = None
 
         # Name and id.
         type_name = data_type.find('NAME/TUV[1]').text
@@ -90,12 +96,16 @@ def _load_data_types(ecu_doc):
         for key, value in ctype.attrib.items():
             if key == 'bl':
                 bit_length = int(value)
+            elif key == 'df':
+                data_format = value
             elif key == 'enc':
                 encoding = value
             elif key == 'minsz':
                 minimum = int(value)
             elif key == 'maxsz':
                 maximum = int(value)
+            elif key == 'qty':
+                qty = value
             else:
                 LOGGER.debug("Ignoring unsupported attribute '%s'.", key)
 
@@ -132,7 +142,9 @@ def _load_data_types(ecu_doc):
                                        byte_order,
                                        unit,
                                        factor,
-                                       offset)
+                                       offset,
+                                       data_format,
+                                       qty)
 
     return data_types
 
@@ -159,7 +171,10 @@ def _load_data_element(data, offset, data_types):
                 minimum=data_type.minimum,
                 maximum=data_type.maximum,
                 unit=data_type.unit,
-                choices=data_type.choices)
+                choices=data_type.choices,
+                encoding=data_type.encoding,
+                data_format=data_type.data_format,
+                qty=data_type.qty)
 
 
 def _load_did_element(did, data_types, did_data_lib):
