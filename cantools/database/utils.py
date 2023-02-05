@@ -114,6 +114,7 @@ def decode_data(data: bytes,
     for field in fields:
         if field.qty == 'field' and field.minimum != field.maximum:
             is_variable_field_size = True
+            break
 
     if allow_truncated and actual_length < expected_length or is_variable_field_size:
         data = data.ljust(expected_length, b"\xFF")
@@ -136,7 +137,8 @@ def decode_data(data: bytes,
                 sequential_startbit = (8 * (field.start // 8)) + (7 - (field.start % 8))
 
             if sequential_startbit + field.length > valid_bit_count:
-                if field.qty == 'field':
+                if field.qty == 'field' and is_variable_field_size:
+                    # for variable field size fields - remove ljusted bytes (data len to maximum definition)
                     max_possible_len = min(field.maximum, actual_length - sequential_startbit//8)
                     unpacked[field.name] = unpacked[field.name][:max_possible_len]
                 else:
