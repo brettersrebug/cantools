@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 
 from ..data import Data
 from ..did import Did
+from ..dtc import Dtc
 from ..internal_database import InternalDatabase
 from ...errors import ParseError
 from ...utils import cdd_offset_to_dbc_start_bit
@@ -244,4 +245,35 @@ def load_string(string):
                                     did_data_lib)
             dids.append(did)
 
-    return InternalDatabase(dids)
+    root = ElementTree.fromstring(string)
+    ecu_doc = root.find('ECUDOC')
+    dtcs = _load_dtc_elements(ecu_doc)
+
+    return InternalDatabase(dids=dids, dtcs=dtcs)
+
+
+def _load_dtc_elements(ecu_doc):
+    """Load all dtcs found in given ECU doc element.
+
+    """
+
+    dtcs = []
+
+    recorddts = ecu_doc.findall('RECORDDTPOOL/RECORDDT')
+
+    for recorddts in recorddts:
+        records = recorddts.findall('RECORD')
+        for record in records:
+            if record.attrib['v'].isnumeric():
+                dtc_3byte_code = int(record.attrib['v'])
+            else:
+                # numeric 3 byte code expected
+                dtc_3byte_code = None
+                LOGGER.debug("3Byte code unknown for {}".format(id(record)))
+
+            dtc_elem = record.findall('TEXT/TUV')
+            dtc_name = dtc_elem[0].text
+            dtcs.append(Dtc(identifier=dtc_3byte_code,
+                            name=dtc_name))
+
+    return dtcs
