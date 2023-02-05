@@ -87,14 +87,14 @@ class Database(object):
 
         """
 
-        return self._name_to_did[name]
+        return self._name_to_did.get(name, None)
 
     def get_did_by_identifier(self, identifier):
         """Find the DID object for given identifier `identifier`.
 
         """
 
-        return self._identifier_to_did[identifier]
+        return self._identifier_to_did.get(identifier, None)
 
     def refresh(self):
         """Refresh the internal database state.
