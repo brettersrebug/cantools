@@ -173,7 +173,7 @@ def create_encode_decode_formats(datas: Sequence[Union["Data", "Signal"]], numbe
     format_length = (8 * number_of_bytes)
 
     def get_format_string_type(data: Union["Data", "Signal"]) -> str:
-        if data.qty == 'atom':
+        if data.qty is None or data.qty == 'atom':
             if data.is_float:
                 return 'f'
             elif data.is_signed:
