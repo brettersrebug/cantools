@@ -5,5 +5,6 @@ class InternalDatabase(object):
 
     """
 
-    def __init__(self, dids):
+    def __init__(self, dids, dtcs):
         self.dids = dids
+        self.dtcs = dtcs
