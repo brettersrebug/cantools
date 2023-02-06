@@ -77,8 +77,10 @@ def _encode_fields(fields: Sequence[Union["Signal", "Data"]],
 
             unpacked[field.name] = _transform(value)  # type: ignore[operator]
             continue
-
-        unpacked[field.name] = field.choice_string_to_number(str(value))
+        elif isinstance(value, bytes):
+            unpacked[field.name] = value
+        else:
+            unpacked[field.name] = field.choice_string_to_number(str(value))
 
     return unpacked
 
@@ -91,10 +93,30 @@ def encode_data(data: SignalMappingType,
     if len(fields) == 0:
         return 0
 
+    expected_length = 0
+    length_extended = 0
+    is_variable_field_size = False
+    for field in fields:
+        if field.qty == 'field':
+            if field.minimum != field.maximum and len(data[field.name]) != field.maximum:
+                if field != fields[-1]:
+                    # variable field size is only allowed for the last field entry.
+                    raise ValueError("'{}' is of type field and the length of the given data does not match field.maximum; variable fieldsize is only allowed for the last field entry!".format(field.name))
+                is_variable_field_size = True
+                length_extended = field.maximum - len(data[field.name])
+                data[field.name] = data[field.name].ljust(field.maximum, b"\xFF")
+            expected_length += field.maximum
+        else:
+            expected_length += field.length
+
     unpacked = _encode_fields(fields, data, scaling)
     big_packed = formats.big_endian.pack(unpacked)
     little_packed = formats.little_endian.pack(unpacked)
-    packed_union = int.from_bytes(big_packed, "big") | int.from_bytes(little_packed, "little")
+
+    if length_extended > 0:
+        packed_union = int.from_bytes(big_packed[:-length_extended], "big") | int.from_bytes(little_packed[length_extended:], "little")
+    else:
+        packed_union = int.from_bytes(big_packed, "big") | int.from_bytes(little_packed, "little")
 
     return packed_union
 
