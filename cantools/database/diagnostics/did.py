@@ -90,12 +90,14 @@ class Did(object):
 
         """
 
+        # todo - maybe extend here the data
         encoded = encode_data(data,
                               self._codec['datas'],
                               self._codec['formats'],
                               scaling)
         encoded |= (0x80 << (8 * self._length))
         encoded = hex(encoded)[4:].rstrip('L')
+        # todo - again remove extended data
 
         return binascii.unhexlify(encoded)[:self._length]
 
