@@ -27,6 +27,7 @@ class DataType(object):
                  unit,
                  factor,
                  offset,
+                 divisor,
                  data_format,
                  qty):
         self.name = name
@@ -40,6 +41,7 @@ class DataType(object):
         self.unit = unit
         self.factor = factor
         self.offset = offset
+        self.divisor = divisor
         self.data_format = data_format
         self.qty = qty
 
@@ -79,6 +81,7 @@ def _load_data_types(ecu_doc):
         unit = None
         factor = 1
         offset = 0
+        divisor = 1
         bit_length = None
         data_format = None
         encoding = None
@@ -129,8 +132,9 @@ def _load_data_types(ecu_doc):
         comp = data_type.find('COMP')
 
         if comp is not None:
-            factor = float(comp.attrib['f'])
-            offset = float(comp.attrib['o'])
+            factor = float(comp.attrib.get('f', 1))
+            offset = float(comp.attrib.get('o', 0))
+            divisor = float(comp.attrib.get('div', 1))
 
         data_types[type_id] = DataType(type_name,
                                        type_id,
@@ -143,6 +147,7 @@ def _load_data_types(ecu_doc):
                                        unit,
                                        factor,
                                        offset,
+                                       divisor,
                                        data_format,
                                        qty)
 
@@ -163,10 +168,10 @@ def _load_data_element(data, offset, data_types):
     dbc_start_bitnum = cdd_offset_to_dbc_start_bit(offset, data_type.bit_length, data_type.byte_order)
 
     return Data(name=data.find('QUAL').text,
-                start = dbc_start_bitnum,
+                start=dbc_start_bitnum,
                 length=data_type.bit_length,
-                byte_order = data_type.byte_order,
-                scale=data_type.factor,
+                byte_order=data_type.byte_order,
+                scale=data_type.factor / data_type.divisor,
                 offset=data_type.offset,
                 minimum=data_type.minimum,
                 maximum=data_type.maximum,
