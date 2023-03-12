@@ -72,16 +72,21 @@ def _load_data_types(ecu_doc):
     types = ecu_doc.findall('DATATYPES/IDENT')
     types += ecu_doc.findall('DATATYPES/LINCOMP')
     types += ecu_doc.findall('DATATYPES/TEXTTBL')
+    
+    # todo implement full support of datatypes below
     types += ecu_doc.findall('DATATYPES/STRUCTDT')
     types += ecu_doc.findall('DATATYPES/EOSITERDT')
+    types += ecu_doc.findall('DATATYPES/COMPTBL')
+    types += ecu_doc.findall('DATATYPES/NUMITERDT')
+    types += ecu_doc.findall('DATATYPES/MUXDT')
 
     for data_type in types:
         # Default values.
-        byte_order = 'big_endian'
+        byte_order = None
         unit = None
-        factor = 1
-        offset = 0
-        divisor = 1
+        factor = None
+        offset = None
+        divisor = None
         bit_length = None
         data_format = None
         encoding = None
@@ -90,7 +95,16 @@ def _load_data_types(ecu_doc):
         qty = None
 
         # Name and id.
-        type_name = data_type.find('NAME/TUV[1]').text
+        type_names = data_type.findall('NAME/TUV')
+        if len(type_names) == 1:
+            type_name = type_names[0].text
+        elif len(type_names) > 1:
+            # todo handle STRUCTDT e.g. id='_000002353BFC0FC0'
+            None
+        else:
+            type_name = 'unknown'
+            raise ParseError("'NAME/TUV' of data_type not found for ID: %s" % data_type.attrib['id'])
+
         type_id = data_type.attrib['id']
 
         # Load from C-type element.
@@ -131,10 +145,23 @@ def _load_data_types(ecu_doc):
         # Slope and offset.
         comp = data_type.find('COMP')
 
-        if comp is not None:
-            factor = float(comp.attrib.get('f', 1))
-            offset = float(comp.attrib.get('o', 0))
-            divisor = float(comp.attrib.get('div', 1))
+        comps = data_type.findall('COMP')
+
+        if len(comps) == 1:
+            factor = float(comps[0].attrib.get('f', 1))
+            offset = float(comps[0].attrib.get('o', 0))
+            divisor = float(comps[0].attrib.get('div', 1))
+        elif len(comps) > 1:
+            # todo COMPTBL handle multiple comp objects e.g. '_00000257F6DDE1E0'
+            for comp in comps:
+                factor = float(comp.attrib.get('f', 1))
+                offset = float(comp.attrib.get('o', 0))
+                divisor = float(comp.attrib.get('div', 1))
+        else:
+            # no comp tag found - use default values
+            factor = 1.0
+            offset = 0.0
+            divisor = 1.0
 
         data_types[type_id] = DataType(type_name,
                                        type_id,
@@ -159,7 +186,10 @@ def _load_data_element(data, offset, data_types):
 
     """
 
-    data_type = data_types[data.attrib['dtref']]
+    data_type = data_types.get(data.attrib['dtref'], None)
+
+    if data_type is None:
+        return None
 
     # Map CDD/c-style field offset to the DBC/can.Signal.start bit numbering
     # convention for compatability with can.Signal objects and the shared codec
