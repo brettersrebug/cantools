@@ -261,7 +261,7 @@ def _load_did_data_refs(ecu_doc: ElementTree.Element) -> Dict[str, ElementTree.E
         return {did.attrib['id']: did for did in dids.findall('DID')}
 
 
-def load_string(string, diagnostics_variant: str = ''):
+def load_string(string, diagnostics_variant:str = ''):
     """Parse given CDD format string.
 
     """
@@ -287,7 +287,7 @@ def load_string(string, diagnostics_variant: str = ''):
     return InternalDatabase(dids=dids, dtcs=dtcs)
 
 
-def _load_dtc_elements(ecu_doc, diagnostics_variant: str = ''):
+def _load_dtc_elements(ecu_doc, diagnostics_variant:str = ''):
     """Load all dtcs found in given ECU doc element.
 
     """

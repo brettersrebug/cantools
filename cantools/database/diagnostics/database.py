@@ -63,7 +63,7 @@ class Database(object):
         with fopen(filename, 'r', encoding=encoding) as fin:
             self.add_cdd(fin)
 
-    def add_cdd_string(self, string, diagnostics_variant: str = ''):
+    def add_cdd_string(self, string, diagnostics_variant:str = ''):
         """Parse given CDD data string and add the parsed data to the
         database.
 
