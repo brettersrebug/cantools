@@ -111,7 +111,7 @@ def load_file(filename: StringPathLike,
               strict: bool = True,
               cache_dir: Optional[str] = None,
               sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit,
-              **kwargs,
+              diagnostics_variant: Optional[str] = None,
               ) -> Union[can.Database, diagnostics.Database]:
     """Open, read and parse given database file and return a
     :class:`can.Database<.can.Database>` or
@@ -199,7 +199,7 @@ def load_file(filename: StringPathLike,
                         prune_choices,
                         strict,
                         sort_signals,
-                        **kwargs)
+                        diagnostics_variant)
     else:
         return _load_file_cache(filename,
                                 database_format,
@@ -269,7 +269,7 @@ def load(fp: TextIO,
          prune_choices: bool = False,
          strict: bool = True,
          sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit,
-         **kwargs) -> Union[can.Database, diagnostics.Database]:
+         diagnostics_variant: Optional[str] = None) -> Union[can.Database, diagnostics.Database]:
     """Read and parse given database file-like object and return a
     :class:`can.Database<.can.Database>` or
     :class:`diagnostics.Database<.diagnostics.Database>` object with
@@ -296,7 +296,7 @@ def load(fp: TextIO,
                        prune_choices,
                        strict,
                        sort_signals,
-                       **kwargs)
+                       diagnostics_variant)
 
 
 def load_string(string: str,
@@ -305,7 +305,7 @@ def load_string(string: str,
                 prune_choices: bool = False,
                 strict: bool = True,
                 sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit,
-                **kwargs) -> Union[can.Database, diagnostics.Database]:
+                diagnostics_variant: Optional[str] = None) -> Union[can.Database, diagnostics.Database]:
     """Parse given database string and return a
     :class:`can.Database<.can.Database>` or
     :class:`diagnostics.Database<.diagnostics.Database>` object with
@@ -396,7 +396,6 @@ def load_string(string: str,
     if database_format in ['cdd', None]:
         try:
             db = diagnostics.Database()
-            diagnostics_variant = kwargs.get('diagnostics_variant', '')
             db.add_cdd_string(string, diagnostics_variant)
             return db
         except (ElementTree.ParseError, ValueError) as e:
