@@ -261,7 +261,7 @@ def _load_did_data_refs(ecu_doc: ElementTree.Element) -> Dict[str, ElementTree.E
         return {did.attrib['id']: did for did in dids.findall('DID')}
 
 
-def load_string(string):
+def load_string(string, diagnostics_variant:str=''):
     """Parse given CDD format string.
 
     """
@@ -282,33 +282,53 @@ def load_string(string):
 
     root = ElementTree.fromstring(string)
     ecu_doc = root.find('ECUDOC')
-    dtcs = _load_dtc_elements(ecu_doc)
+    dtcs = _load_dtc_elements(ecu_doc, diagnostics_variant)
 
     return InternalDatabase(dids=dids, dtcs=dtcs)
 
 
-def _load_dtc_elements(ecu_doc):
+def _load_dtc_elements(ecu_doc, diagnostics_variant:str = ''):
     """Load all dtcs found in given ECU doc element.
 
     """
 
     dtcs = []
+    dtcs_by_id = {}
+    vars = ecu_doc.findall('ECU/VAR')
 
-    recorddts = ecu_doc.findall('RECORDDTPOOL/RECORDDT')
+    parse_all_variants = False
+    if len(diagnostics_variant) == 0:  # load all variants if no variant was selected
+        parse_all_variants = True
 
-    for recorddts in recorddts:
-        records = recorddts.findall('RECORD')
-        for record in records:
-            if record.attrib['v'].isnumeric():
-                dtc_3byte_code = int(record.attrib['v'])
-            else:
-                # numeric 3 byte code expected
-                dtc_3byte_code = None
-                LOGGER.debug("3Byte code unknown for {}".format(id(record)))
+    for var in vars:
+        variant_text_id = var.find('QUAL').text
+        if (parse_all_variants == False and
+            (diagnostics_variant.lower() != variant_text_id.lower())):
+            continue
 
-            dtc_elem = record.findall('TEXT/TUV')
-            dtc_name = dtc_elem[0].text
-            dtcs.append(Dtc(identifier=dtc_3byte_code,
-                            name=dtc_name))
+        recorddts = var.findall('DIAGINST/SIMPLECOMPCONT/RECORDDATAOBJ/RECORDDT')
 
+        for recorddts in recorddts:
+            records = recorddts.findall('RECORD')
+            for record in records:
+                if 'v' not in record.attrib:
+                    continue
+
+                if record.attrib['v'].isnumeric():
+                    dtc_3byte_code = int(record.attrib['v'])
+                else:
+                    # numeric 3 byte code expected
+                    dtc_3byte_code = None
+                    LOGGER.debug("3Byte code unknown for {}".format(id(record)))
+
+                dtc_elem = record.findall('TEXT/TUV')
+                dtc_name = dtc_elem[0].text
+                dtc = Dtc(identifier=dtc_3byte_code,
+                                name=dtc_name)
+                dtc.data_udate({'variant':variant_text_id})
+
+                dtc_known = dtcs_by_id.get(dtc_3byte_code, None)
+                dtcs.append(dtc)
+                dtcs_by_id.update({dtc_3byte_code: dtc})
+    
     return dtcs

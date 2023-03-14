@@ -80,6 +80,7 @@ def _load_file_cache(filename: StringPathLike,
                      strict: bool,
                      cache_dir: str,
                      sort_signals: utils.type_sort_signals,
+                     **kwargs,
                      ) -> Union[can.Database, diagnostics.Database]:
     with open(filename, 'rb') as fin:
         key = fin.read()
@@ -95,7 +96,8 @@ def _load_file_cache(filename: StringPathLike,
                                 frame_id_mask,
                                 prune_choices,
                                 strict,
-                                sort_signals)
+                                sort_signals,
+                                **kwargs)
             cache[key] = database
 
             return database
@@ -109,6 +111,7 @@ def load_file(filename: StringPathLike,
               strict: bool = True,
               cache_dir: Optional[str] = None,
               sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit,
+              **kwargs,
               ) -> Union[can.Database, diagnostics.Database]:
     """Open, read and parse given database file and return a
     :class:`can.Database<.can.Database>` or
@@ -195,7 +198,8 @@ def load_file(filename: StringPathLike,
                         frame_id_mask,
                         prune_choices,
                         strict,
-                        sort_signals)
+                        sort_signals,
+                        **kwargs)
     else:
         return _load_file_cache(filename,
                                 database_format,
@@ -204,7 +208,8 @@ def load_file(filename: StringPathLike,
                                 prune_choices,
                                 strict,
                                 cache_dir,
-                                sort_signals)
+                                sort_signals,
+                                **kwargs)
 
 
 def dump_file(database,
@@ -263,7 +268,8 @@ def load(fp: TextIO,
          frame_id_mask: Optional[int] = None,
          prune_choices: bool = False,
          strict: bool = True,
-         sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit) -> Union[can.Database, diagnostics.Database]:
+         sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit,
+         **kwargs) -> Union[can.Database, diagnostics.Database]:
     """Read and parse given database file-like object and return a
     :class:`can.Database<.can.Database>` or
     :class:`diagnostics.Database<.diagnostics.Database>` object with
@@ -289,7 +295,8 @@ def load(fp: TextIO,
                        frame_id_mask,
                        prune_choices,
                        strict,
-                       sort_signals)
+                       sort_signals,
+                       **kwargs)
 
 
 def load_string(string: str,
@@ -297,7 +304,8 @@ def load_string(string: str,
                 frame_id_mask: Optional[int] = None,
                 prune_choices: bool = False,
                 strict: bool = True,
-                sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit) -> Union[can.Database, diagnostics.Database]:
+                sort_signals: utils.type_sort_signals = utils.sort_signals_by_start_bit,
+                **kwargs) -> Union[can.Database, diagnostics.Database]:
     """Parse given database string and return a
     :class:`can.Database<.can.Database>` or
     :class:`diagnostics.Database<.diagnostics.Database>` object with
@@ -342,7 +350,7 @@ def load_string(string: str,
     e_sym = None
     e_cdd = None
 
-    def load_can_database(fmt: str) -> can.Database:
+    def load_can_database(fmt: str, **kwargs) -> can.Database:
         db = can.Database(frame_id_mask=frame_id_mask,
                           strict=strict,
                           sort_signals=sort_signals)
@@ -388,7 +396,8 @@ def load_string(string: str,
     if database_format in ['cdd', None]:
         try:
             db = diagnostics.Database()
-            db.add_cdd_string(string)
+            diagnostics_variant = kwargs.get('diagnostics_variant', '')
+            db.add_cdd_string(string, diagnostics_variant)
             return db
         except (ElementTree.ParseError, ValueError) as e:
             e_cdd = e
