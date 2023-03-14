@@ -211,7 +211,7 @@ def _load_did_data_refs(ecu_doc: ElementTree.Element) -> Dict[str, ElementTree.E
         return {did.attrib['id']: did for did in dids.findall('DID')}
 
 
-def load_string(string, diagnostics_variant:str=''):
+def load_string(string, diagnostics_variant: str = ''):
     """Parse given CDD format string.
 
     """
@@ -237,20 +237,19 @@ def load_string(string, diagnostics_variant:str=''):
     return InternalDatabase(dids=dids, dtcs=dtcs)
 
 
-def _load_dtc_elements(ecu_doc, diagnostics_variant:str = ''):
+def _load_dtc_elements(ecu_doc, diagnostics_variant: str = ''):
     """Load all dtcs found in given ECU doc element.
 
     """
 
     dtcs = []
-    dtcs_by_id = {}
-    vars = ecu_doc.findall('ECU/VAR')
+    variants = ecu_doc.findall('ECU/VAR')
 
     parse_all_variants = False
-    if len(diagnostics_variant) == 0:  # load all variants if no variant was selected
+    if not diagnostics_variant:  # load all variants if no variant was selected
         parse_all_variants = True
 
-    for var in vars:
+    for var in variants:
         variant_text_id = var.find('QUAL').text
         if (parse_all_variants == False and
             (diagnostics_variant.lower() != variant_text_id.lower())):
@@ -276,9 +275,6 @@ def _load_dtc_elements(ecu_doc, diagnostics_variant:str = ''):
                 dtc = Dtc(identifier=dtc_3byte_code,
                                 name=dtc_name)
                 dtc.data_udate({'variant':variant_text_id})
-
-                dtc_known = dtcs_by_id.get(dtc_3byte_code, None)
                 dtcs.append(dtc)
-                dtcs_by_id.update({dtc_3byte_code: dtc})
-    
+
     return dtcs
