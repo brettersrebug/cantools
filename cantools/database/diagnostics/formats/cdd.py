@@ -14,6 +14,45 @@ from ...utils import cdd_offset_to_dbc_start_bit
 LOGGER = logging.getLogger(__name__)
 
 
+class DCL_ServiceTemplate(object):
+    def __init__(self,
+                 id: int,
+                 name: str,
+                 qualifier: str):
+        self.id = id
+        self.name = name
+        self.qualifier = qualifier
+
+
+class ProtocolService(object):
+    def __init__(self,
+                 id: int,
+                 name: str,
+                 sid: int,
+                 qualifier: str):
+        self.id = id
+        self.name = name
+        self.sid = sid
+        self.qualifier = qualifier
+        self.dcl_srv_tmpl = {}
+        self.dids = []
+
+    def update_dcl_srv_templates(self, template: dict):
+        """
+
+        Parameters
+        ----------
+        template:dict
+            format {id: DCL_ServiceTemplate}
+
+        Returns
+        -------
+            None
+
+        """
+        self.dcl_srv_tmpl.update(template)
+
+
 class DataType(object):
 
     def __init__(self,
@@ -63,6 +102,37 @@ def _load_choices(data_type):
     return choices
 
 
+def _load_protocol_services(ecu_doc):
+    protocol_services_elements = ecu_doc.findall('PROTOCOLSERVICES/PROTOCOLSERVICE')
+
+    protocol_services = []
+    ps_dict = {}
+    for ps_elem in protocol_services_elements:
+        ps_id = ps_elem.attrib['id']
+        constcomp = ps_elem.find("REQ/CONSTCOMP")
+        ps_name = ps_elem.find("NAME/TUV").text
+        ps_qual = ps_elem.find("QUAL").text
+        if constcomp:
+            ps_sid = int(constcomp.attrib.get('v', -1))
+            ps = ProtocolService(id=ps_id, name=ps_name, sid=ps_sid, qualifier=ps_qual)
+            ps_dict.update({ps_id: ps})
+            protocol_services.append(ps)
+
+    dcl_srv_tmpl_elements = ecu_doc.findall('DCLTMPLS/DCLTMPL/DCLSRVTMPL')
+    for dcl_srv_tmpl_element in dcl_srv_tmpl_elements:
+        tmplref = dcl_srv_tmpl_element.attrib.get('tmplref', None)
+        ps = ps_dict.get(tmplref, None)
+        if ps is not None:
+            id = dcl_srv_tmpl_element.attrib.get('id', -1)
+            dcl_srv_tmpl = DCL_ServiceTemplate(id=id,
+                                               name=dcl_srv_tmpl_element.find('NAME/TUV').text,
+                                               qualifier=dcl_srv_tmpl_element.find('QUAL').text,
+                                               )
+            ps.update_dcl_srv_templates({id: dcl_srv_tmpl})
+
+    return protocol_services
+
+
 def _load_data_types(ecu_doc):
     """Load all data types found in given ECU doc element.
 
@@ -73,7 +143,7 @@ def _load_data_types(ecu_doc):
     types = ecu_doc.findall('DATATYPES/IDENT')
     types += ecu_doc.findall('DATATYPES/LINCOMP')
     types += ecu_doc.findall('DATATYPES/TEXTTBL')
-    
+
     # todo implement full support of datatypes below
     types += ecu_doc.findall('DATATYPES/STRUCTDT')
     types += ecu_doc.findall('DATATYPES/EOSITERDT')
@@ -144,8 +214,6 @@ def _load_data_types(ecu_doc):
         choices = _load_choices(data_type)
 
         # Slope and offset.
-        comp = data_type.find('COMP')
-
         comps = data_type.findall('COMP')
 
         if len(comps) == 1:
@@ -213,16 +281,18 @@ def _load_data_element(data, offset, data_types):
                 qty=data_type.qty)
 
 
-def _load_did_element(did, data_types, did_data_lib):
+def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
     """Load given DID element and return a did object.
 
     """
 
     offset = 0
     datas = []
-    data_objs = did.findall('SIMPLECOMPCONT/DATAOBJ')
-    data_objs += did.findall('SIMPLECOMPCONT/UNION/STRUCT/DATAOBJ')
-    did_data_refs = did.findall('SIMPLECOMPCONT/DIDDATAREF')
+    data_objs = []
+    data_objs = diaginst.findall('SIMPLECOMPCONT/DATAOBJ')
+    data_objs += diaginst.findall('SIMPLECOMPCONT/UNION/STRUCT/DATAOBJ')
+    did_data_refs = diaginst.findall('SIMPLECOMPCONT/DIDDATAREF')
+    service_elements = diaginst.findall('SERVICE')
 
     for data_ref in did_data_refs:
         try:
@@ -239,18 +309,33 @@ def _load_did_element(did, data_types, did_data_lib):
             datas.append(data)
             offset += data.length
 
-    identifier = int(did.find('STATICVALUE').attrib['v'])
-    name = did.find('QUAL').text
-    length = (offset + 7) // 8
+    did = None
+    if len(datas):
+        identifier = int(diaginst.find('STATICVALUE').attrib['v'])
+        name = diaginst.find('QUAL').text
+        length = (offset + 7) // 8
 
-    return Did(identifier=identifier,
-               name=name,
-               length=length,
-               datas=datas)
+        did = Did(identifier=identifier,
+                  name=name,
+                  length=length,
+                  datas=datas)
+
+        service_refs = []
+        for se in service_elements:
+            tmplref_id = se.attrib.get('tmplref', None)
+            for ps in protocol_services:
+                if tmplref_id in ps.dcl_srv_tmpl:
+                    ps.dids.append(did)
+
+    # service.attr['tmplref'] == DCLSRVTMPL.attr['id']
+    # DCLSRVTMPL.attr['tmplref'] == PROTOCOLSERVICE.attr['id']
+    # PROTOCOLSERVICE/CONSTCOMP.attrib['v'] == SID
+
+    return did
 
 
 def _load_did_data_refs(ecu_doc: ElementTree.Element) -> Dict[str, ElementTree.Element]:
-    """Load DID data references from given ECU doc element.
+    """Load DID data references from given ECU doc element. These entries will be then used in the variants.
 
     """
     dids = ecu_doc.find('DIDS')
@@ -261,51 +346,65 @@ def _load_did_data_refs(ecu_doc: ElementTree.Element) -> Dict[str, ElementTree.E
         return {did.attrib['id']: did for did in dids.findall('DID')}
 
 
-def load_string(string, diagnostics_variant:str = ''):
+def load_string(string, diagnostics_variant: str = ''):
     """Parse given CDD format string.
 
     """
 
     root = ElementTree.fromstring(string)
     ecu_doc = root.find('ECUDOC')
-    data_types = _load_data_types(ecu_doc)
-    did_data_lib = _load_did_data_refs(ecu_doc)
-    var = ecu_doc.findall('ECU')[0].find('VAR')
-    dids = []
+    all_variants = ecu_doc.findall('ECU/VAR')
 
-    for diag_class in var.findall('DIAGCLASS'):
-        for diag_inst in diag_class.findall('DIAGINST'):
-            did = _load_did_element(diag_inst,
-                                    data_types,
-                                    did_data_lib)
-            dids.append(did)
-
-    root = ElementTree.fromstring(string)
-    ecu_doc = root.find('ECUDOC')
-    dtcs = _load_dtc_elements(ecu_doc, diagnostics_variant)
-
-    return InternalDatabase(dids=dids, dtcs=dtcs)
-
-
-def _load_dtc_elements(ecu_doc, diagnostics_variant:str = ''):
-    """Load all dtcs found in given ECU doc element.
-
-    """
-
-    dtcs = []
-    variants = ecu_doc.findall('ECU/VAR')
-
+    # Find the relevant variants
     parse_all_variants = False
     if not diagnostics_variant:  # load all variants if no variant was selected
         parse_all_variants = True
 
-    for var in variants:
+    variants = []
+    for var in all_variants:
         variant_text_id = var.find('QUAL').text
         if (parse_all_variants == False and
-            (diagnostics_variant.lower() != variant_text_id.lower())):
+                (diagnostics_variant.lower() != variant_text_id.lower())):
             continue
+        variants.append(var)
+
+    data_types = _load_data_types(ecu_doc)
+    did_data_lib = _load_did_data_refs(ecu_doc)
+
+    protocol_services = _load_protocol_services(ecu_doc)
+    dids = _load_did_elements(variants, data_types, did_data_lib, protocol_services)
+    dtcs = _load_dtc_elements(variants)
+
+    return InternalDatabase(protocol_services=protocol_services, dids=dids, dtcs=dtcs)
+
+
+def _load_did_elements(variants: list, data_types, did_data_lib, protocol_services):
+    # var = ecu_doc.findall('ECU')[0].find('VAR')
+    dids = []
+
+    for var in variants:
+        for diag_class in var.findall('DIAGCLASS'):
+            for diag_inst in diag_class.findall('DIAGINST'):
+                did = _load_did_element(diag_inst,
+                                        data_types,
+                                        did_data_lib,
+                                        protocol_services)
+                if did:
+                    dids.append(did)
+    return dids
+
+
+def _load_dtc_elements(variants: list):
+    """Load all dtcs found in given variant elements.
+
+    """
+    dtcs = []
+
+    for var in variants:
+        variant_text_id = var.find('QUAL').text
 
         recorddts = var.findall('DIAGINST/SIMPLECOMPCONT/RECORDDATAOBJ/RECORDDT')
+        # todo - parsing multiple RecorDDTs causes duplicate entries - clarify differences of recoreddts
 
         for recorddts in recorddts:
             records = recorddts.findall('RECORD')
@@ -323,8 +422,8 @@ def _load_dtc_elements(ecu_doc, diagnostics_variant:str = ''):
                 dtc_elem = record.findall('TEXT/TUV')
                 dtc_name = dtc_elem[0].text
                 dtc = Dtc(identifier=dtc_3byte_code,
-                                name=dtc_name)
-                dtc.data_udate({'variant':variant_text_id})
+                          name=dtc_name)
+                dtc.data_udate({'variant': variant_text_id})
                 dtcs.append(dtc)
 
     return dtcs

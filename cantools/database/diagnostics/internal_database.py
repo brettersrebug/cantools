@@ -5,6 +5,7 @@ class InternalDatabase(object):
 
     """
 
-    def __init__(self, dids, dtcs):
+    def __init__(self, protocol_services, dids, dtcs):
+        self.protocol_services = protocol_services
         self.dids = dids
         self.dtcs = dtcs
