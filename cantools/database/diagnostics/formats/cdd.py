@@ -111,12 +111,11 @@ def _load_protocol_services(ecu_doc):
         ps = ps_dict.get(tmplref, None)
         if ps is not None:
             id = dcl_srv_tmpl_element.attrib.get('id', -1)
-            id = dcl_srv_tmpl_element.attrib['id']
             dcl_srv_tmpl = DCL_ServiceTemplate(id=id,
                                                name=dcl_srv_tmpl_element.find('NAME/TUV').text,
                                                qualifier=dcl_srv_tmpl_element.find('QUAL').text,
                                                )
-            ps.update_dcl_srv_templates({id:dcl_srv_tmpl})
+            ps.update_dcl_srv_templates({id: dcl_srv_tmpl})
 
     return protocol_services
 
@@ -201,8 +200,6 @@ def _load_data_types(ecu_doc):
         choices = _load_choices(data_type)
 
         # Slope and offset.
-        comp = data_type.find('COMP')
-
         comps = data_type.findall('COMP')
 
         if len(comps) == 1:
