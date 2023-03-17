@@ -12,6 +12,16 @@ from ...utils import cdd_offset_to_dbc_start_bit
 
 LOGGER = logging.getLogger(__name__)
 
+class DCL_ServiceTemplate(object):
+    def __init__(self,
+                 id:int,
+                 name:str,
+                 qualifier:str):
+        self.id = id
+        self.name = name
+        self.qualifier = qualifier
+
+
 class ProtocolService(object):
     def __init__(self,
                  id:int,
