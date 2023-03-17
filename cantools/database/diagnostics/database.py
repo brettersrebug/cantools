@@ -1,429 +1,214 @@
-# Load and dump a diagnostics database in CDD format.
 import logging
-from typing import Dict
 
-from xml.etree import ElementTree
+from .formats import cdd
+from ...compat import fopen
 
-from ..data import Data
-from ..did import Did
-from ..dtc import Dtc
-from ..internal_database import InternalDatabase
-from ...errors import ParseError
-from ...utils import cdd_offset_to_dbc_start_bit
 
 LOGGER = logging.getLogger(__name__)
 
 
-class DCL_ServiceTemplate(object):
+class Database(object):
+    """This class contains all DIDs.
+
+    The factory functions :func:`load()<cantools.database.load()>`,
+    :func:`load_file()<cantools.database.load_file()>` and
+    :func:`load_string()<cantools.database.load_string()>` returns
+    instances of this class.
+
+    """
+
     def __init__(self,
-                 id: int,
-                 name: str,
-                 qualifier: str):
-        self.id = id
-        self.name = name
-        self.qualifier = qualifier
+                 protocol_services=None,
+                 dids=None,
+                 dtcs=None):
+        self._name_to_did = {}
+        self._identifier_to_did = {}
+        self._name_to_dtc = {}
+        self._identifier_to_dtc = {}
+        self._protocol_services = protocol_services if protocol_services else []
+        self._dids = dids if dids else []
+        self._dtcs = dtcs if dtcs else []
+        self.refresh()
 
-
-class ProtocolService(object):
-    def __init__(self,
-                 id: int,
-                 name: str,
-                 sid: int,
-                 qualifier: str):
-        self.id = id
-        self.name = name
-        self.sid = sid
-        self.qualifier = qualifier
-        self.dcl_srv_tmpl = {}
-        self.dids = []
-
-    def update_dcl_srv_templates(self, template: dict):
-        """
-
-        Parameters
-        ----------
-        template:dict
-            format {id: DCL_ServiceTemplate}
-
-        Returns
-        -------
-            None
+    @property
+    def dids(self):
+        """A list of DIDs in the database.
 
         """
-        self.dcl_srv_tmpl.update(template)
+        return self._dids
 
+    @property
+    def dtcs(self):
+        """A list of DTCs in the database.
 
-class DataType(object):
+        """
 
-    def __init__(self,
-                 name,
-                 id_,
-                 bit_length,
-                 encoding,
-                 minimum,
-                 maximum,
-                 choices,
-                 byte_order,
-                 unit,
-                 factor,
-                 offset,
-                 divisor,
-                 data_format,
-                 qty):
-        self.name = name
-        self.id_ = id_
-        self.bit_length = bit_length
-        self.encoding = encoding
-        self.minimum = minimum
-        self.maximum = maximum
-        self.choices = choices
-        self.byte_order = byte_order
-        self.unit = unit
-        self.factor = factor
-        self.offset = offset
-        self.divisor = divisor
-        self.data_format = data_format
-        self.qty = qty
+        return self._dtcs
 
+    @property
+    def protcol_services(self):
+        """A list of Protocol services in the database.
 
-def _load_choices(data_type):
-    choices = {}
+        """
+        return self._protocol_services
 
-    for choice in data_type.findall('TEXTMAP'):
-        start = int(choice.attrib['s'].strip('()'))
-        end = int(choice.attrib['e'].strip('()'))
+    def get_dids_of_services(self, service_ids:list = [])->dict:
+        """A list of DIDs of a given list of service identifiers.
 
-        if start == end:
-            choices[start] = choice.find('TEXT/TUV[1]').text
+        """
+        dids_filtered = {}
 
-    if not choices:
-        choices = None
-
-    return choices
-
-
-def _load_protocol_services(ecu_doc):
-    protocol_services_elements = ecu_doc.findall('PROTOCOLSERVICES/PROTOCOLSERVICE')
-
-    protocol_services = []
-    ps_dict = {}
-    for ps_elem in protocol_services_elements:
-        ps_id = ps_elem.attrib['id']
-        constcomp = ps_elem.find("REQ/CONSTCOMP")
-        ps_name = ps_elem.find("NAME/TUV").text
-        ps_qual = ps_elem.find("QUAL").text
-        if constcomp:
-            ps_sid = int(constcomp.attrib.get('v', -1))
-            ps = ProtocolService(id=ps_id, name=ps_name, sid=ps_sid, qualifier=ps_qual)
-            ps_dict.update({ps_id: ps})
-            protocol_services.append(ps)
-
-    dcl_srv_tmpl_elements = ecu_doc.findall('DCLTMPLS/DCLTMPL/DCLSRVTMPL')
-    for dcl_srv_tmpl_element in dcl_srv_tmpl_elements:
-        tmplref = dcl_srv_tmpl_element.attrib.get('tmplref', None)
-        ps = ps_dict.get(tmplref, None)
-        if ps is not None:
-            id = dcl_srv_tmpl_element.attrib.get('id', -1)
-            dcl_srv_tmpl = DCL_ServiceTemplate(id=id,
-                                               name=dcl_srv_tmpl_element.find('NAME/TUV').text,
-                                               qualifier=dcl_srv_tmpl_element.find('QUAL').text,
-                                               )
-            ps.update_dcl_srv_templates({id: dcl_srv_tmpl})
-
-    return protocol_services
-
-
-def _load_data_types(ecu_doc):
-    """Load all data types found in given ECU doc element.
-
-    """
-
-    data_types = {}
-
-    types = ecu_doc.findall('DATATYPES/IDENT')
-    types += ecu_doc.findall('DATATYPES/LINCOMP')
-    types += ecu_doc.findall('DATATYPES/TEXTTBL')
-
-    # todo implement full support of datatypes below
-    types += ecu_doc.findall('DATATYPES/STRUCTDT')
-    types += ecu_doc.findall('DATATYPES/EOSITERDT')
-    types += ecu_doc.findall('DATATYPES/COMPTBL')
-    types += ecu_doc.findall('DATATYPES/NUMITERDT')
-    types += ecu_doc.findall('DATATYPES/MUXDT')
-
-    for data_type in types:
-        # Default values.
-        byte_order = None
-        unit = None
-        factor = None
-        offset = None
-        divisor = None
-        bit_length = None
-        data_format = None
-        encoding = None
-        minimum = None
-        maximum = None
-        qty = None
-
-        # Name and id.
-        type_names = data_type.findall('NAME/TUV')
-        if len(type_names) == 1:
-            type_name = type_names[0].text
-        elif len(type_names) > 1:
-            # todo handle STRUCTDT e.g. id='_000002353BFC0FC0'
-            None
+        if service_ids:
+            for service_id in service_ids:
+                dids_filtered.update({service_id: []})
+                for ps in self._protocol_services:
+                    if ps.sid == service_id:
+                        dids_filtered[service_id] += ps.dids
         else:
-            type_name = 'unknown'
-            raise ParseError("'NAME/TUV' of data_type not found for ID: %s" % data_type.attrib['id'])
+            for ps in self._protocol_services:
+                dids_filtered.update({ps.sid:[]})
+                dids_filtered[ps.sid] += ps.dids
 
-        type_id = data_type.attrib['id']
+        return dids_filtered
 
-        # Load from C-type element.
-        ctype = data_type.find('CVALUETYPE')
+    def add_cdd(self, fp):
+        """Read and parse CDD data from given file-like object and add the
+        parsed data to the database.
 
-        for key, value in ctype.attrib.items():
-            if key == 'bl':
-                bit_length = int(value)
-            elif key == 'df':
-                data_format = value
-            elif key == 'enc':
-                encoding = value
-            elif key == 'minsz':
-                minimum = int(value)
-            elif key == 'maxsz':
-                maximum = int(value)
-            elif key == 'qty':
-                qty = value
-            else:
-                LOGGER.debug("Ignoring unsupported attribute '%s'.", key)
+        """
 
-        if ctype.attrib['bo'] == '21':
-            byte_order = 'big_endian'
-        elif ctype.attrib['bo'] == '12':
-            byte_order = 'little_endian'
-        else:
-            raise ParseError("Unknown byte order code: %s" % ctype.attrib['bo'])
+        self.add_cdd_string(fp.read())
 
-        # Load from P-type element.
-        ptype_unit = data_type.find('PVALUETYPE/UNIT')
+    def add_cdd_file(self, filename, encoding='utf-8'):
+        """Open, read and parse CDD data from given file and add the parsed
+        data to the database.
 
-        if ptype_unit is not None:
-            unit = ptype_unit.text
+        `encoding` specifies the file encoding.
 
-        # Choices, scale and offset.
-        choices = _load_choices(data_type)
+        """
 
-        # Slope and offset.
-        comps = data_type.findall('COMP')
+        with fopen(filename, 'r', encoding=encoding) as fin:
+            self.add_cdd(fin)
 
-        if len(comps) == 1:
-            factor = float(comps[0].attrib.get('f', 1))
-            offset = float(comps[0].attrib.get('o', 0))
-            divisor = float(comps[0].attrib.get('div', 1))
-        elif len(comps) > 1:
-            # todo COMPTBL handle multiple comp objects e.g. '_00000257F6DDE1E0'
-            for comp in comps:
-                factor = float(comp.attrib.get('f', 1))
-                offset = float(comp.attrib.get('o', 0))
-                divisor = float(comp.attrib.get('div', 1))
-        else:
-            # no comp tag found - use default values
-            factor = 1.0
-            offset = 0.0
-            divisor = 1.0
+    def add_cdd_string(self, string, diagnostics_variant:str = ''):
+        """Parse given CDD data string and add the parsed data to the
+        database.
 
-        data_types[type_id] = DataType(type_name,
-                                       type_id,
-                                       bit_length,
-                                       encoding,
-                                       minimum,
-                                       maximum,
-                                       choices,
-                                       byte_order,
-                                       unit,
-                                       factor,
-                                       offset,
-                                       divisor,
-                                       data_format,
-                                       qty)
+        """
 
-    return data_types
+        database = cdd.load_string(string, diagnostics_variant)
+        self._protocol_services = database.protocol_services
+        self._dids = database.dids
+        self._dtcs = database.dtcs
+        self.refresh()
 
+    def _add_did(self, did):
+        """Add given DID to the database.
 
-def _load_data_element(data, offset, data_types):
-    """Load given signal element and return a signal object.
+        """
 
-    """
+        if did.name in self._name_to_did:
+            LOGGER.warning("Overwriting DID with name '%s' in the "
+                           "name to DID dictionary.",
+                           did.name)
 
-    data_type = data_types.get(data.attrib['dtref'], None)
+        if did.identifier in self._identifier_to_did:
+            LOGGER.warning(
+                "Overwriting DID '%s' with '%s' in the identifier to DID "
+                "dictionary because they have identical identifiers 0x%x.",
+                self._identifier_to_did[did.identifier].name,
+                did.name,
+                did.identifier)
 
-    if data_type is None:
-        return None
+        self._name_to_did[did.name] = did
+        self._identifier_to_did[did.identifier] = did
 
-    # Map CDD/c-style field offset to the DBC/can.Signal.start bit numbering
-    # convention for compatability with can.Signal objects and the shared codec
-    # infrastructure.
-    #
-    dbc_start_bitnum = cdd_offset_to_dbc_start_bit(offset, data_type.bit_length, data_type.byte_order)
+    def get_did_by_name(self, name):
+        """Find the DID object for given name `name`.
 
-    return Data(name=data.find('QUAL').text,
-                start=dbc_start_bitnum,
-                length=data_type.bit_length,
-                byte_order=data_type.byte_order,
-                scale=data_type.factor / data_type.divisor,
-                offset=data_type.offset,
-                minimum=data_type.minimum,
-                maximum=data_type.maximum,
-                unit=data_type.unit,
-                choices=data_type.choices,
-                encoding=data_type.encoding,
-                data_format=data_type.data_format,
-                qty=data_type.qty)
+        """
 
+        return self._name_to_did.get(name, None)
 
-def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
-    """Load given DID element and return a did object.
+    def get_did_by_identifier(self, identifier):
+        """Find the DID object for given identifier `identifier`.
 
-    """
+        """
 
-    offset = 0
-    datas = []
-    data_objs = []
-    data_objs = diaginst.findall('SIMPLECOMPCONT/DATAOBJ')
-    data_objs += diaginst.findall('SIMPLECOMPCONT/UNION/STRUCT/DATAOBJ')
-    did_data_refs = diaginst.findall('SIMPLECOMPCONT/DIDDATAREF')
-    service_elements = diaginst.findall('SERVICE')
+        return self._identifier_to_did.get(identifier, None)
 
-    for data_ref in did_data_refs:
-        try:
-            data_objs += did_data_lib[data_ref.attrib['didRef']].findall('STRUCTURE/DATAOBJ')
-        except KeyError:
-            pass
+    def _add_dtc(self, dtc):
+        """Add given DTC to the database.
 
-    for data_obj in data_objs:
-        data = _load_data_element(data_obj,
-                                  offset,
-                                  data_types)
+        """
 
-        if data:
-            datas.append(data)
-            offset += data.length
+        if dtc.name in self._name_to_dtc:
+            LOGGER.warning("Overwriting DTC with name '%s' in the "
+                           "name to DTC dictionary.",
+                           dtc.name)
 
-    did = None
-    if len(datas):
-        identifier = int(diaginst.find('STATICVALUE').attrib['v'])
-        name = diaginst.find('QUAL').text
-        length = (offset + 7) // 8
+        if dtc.identifier in self._identifier_to_dtc:
+            LOGGER.warning(
+                "Overwriting DTC '%s' with '%s' in the identifier to DTC "
+                "dictionary because they have identical identifiers 0x%x.",
+                self._identifier_to_dtc[dtc.identifier].name,
+                dtc.name,
+                dtc.identifier)
 
-        did = Did(identifier=identifier,
-                  name=name,
-                  length=length,
-                  datas=datas)
+        self._name_to_dtc[dtc.name] = dtc
+        self._identifier_to_dtc[dtc.identifier] = dtc
 
-        service_refs = []
-        for se in service_elements:
-            tmplref_id = se.attrib.get('tmplref', None)
-            for ps in protocol_services:
-                if tmplref_id in ps.dcl_srv_tmpl:
-                    ps.dids.append(did)
+    def get_dtc_by_name(self, name):
+        """Find the DTC object for given name `name`.
 
-    # service.attr['tmplref'] == DCLSRVTMPL.attr['id']
-    # DCLSRVTMPL.attr['tmplref'] == PROTOCOLSERVICE.attr['id']
-    # PROTOCOLSERVICE/CONSTCOMP.attrib['v'] == SID
+        """
 
-    return did
+        return self._name_to_dtc.get(name, None)
 
+    def get_dtc_by_identifier(self, identifier):
+        """Find the DTC object for given identifier `identifier`.
 
-def _load_did_data_refs(ecu_doc: ElementTree.Element) -> Dict[str, ElementTree.Element]:
-    """Load DID data references from given ECU doc element. These entries will be then used in the variants.
+        """
 
-    """
-    dids = ecu_doc.find('DIDS')
+        return self._identifier_to_dtc.get(identifier, None)
 
-    if dids is None:
-        return {}
-    else:
-        return {did.attrib['id']: did for did in dids.findall('DID')}
+    def refresh(self):
+        """Refresh the internal database state.
 
+        This method must be called after modifying any DIDs/DTCs in the
+        database to refresh the internal lookup tables used when
+        encoding and decoding DIDs.
 
-def load_string(string, diagnostics_variant: str = ''):
-    """Parse given CDD format string.
+        """
 
-    """
+        self._name_to_did = {}
+        self._identifier_to_did = {}
 
-    root = ElementTree.fromstring(string)
-    ecu_doc = root.find('ECUDOC')
-    all_variants = ecu_doc.findall('ECU/VAR')
+        for did in self._dids:
+            did.refresh()
+            self._add_did(did)
 
-    # Find the relevant variants
-    parse_all_variants = False
-    if not diagnostics_variant:  # load all variants if no variant was selected
-        parse_all_variants = True
+        self._name_to_dtc = {}
+        self._identifier_to_dtc = {}
 
-    variants = []
-    for var in all_variants:
-        variant_text_id = var.find('QUAL').text
-        if (parse_all_variants == False and
-                (diagnostics_variant.lower() != variant_text_id.lower())):
-            continue
-        variants.append(var)
+        for dtc in self._dtcs:
+            dtc.refresh()
+            self._add_dtc(dtc)
 
-    data_types = _load_data_types(ecu_doc)
-    did_data_lib = _load_did_data_refs(ecu_doc)
+    def __repr__(self):
+        lines = []
 
-    protocol_services = _load_protocol_services(ecu_doc)
-    dids = _load_did_elements(variants, data_types, did_data_lib, protocol_services)
-    dtcs = _load_dtc_elements(variants)
+        for did in self._dids:
+            lines.append(repr(did))
 
-    return InternalDatabase(protocol_services=protocol_services, dids=dids, dtcs=dtcs)
+            for data in did.datas:
+                lines.append('  ' + repr(data))
 
+            lines.append('')
 
-def _load_did_elements(variants: list, data_types, did_data_lib, protocol_services):
-    # var = ecu_doc.findall('ECU')[0].find('VAR')
-    dids = []
+        for dtc in self._dtcs:
+            lines.append(repr(dtc))
 
-    for var in variants:
-        for diag_class in var.findall('DIAGCLASS'):
-            for diag_inst in diag_class.findall('DIAGINST'):
-                did = _load_did_element(diag_inst,
-                                        data_types,
-                                        did_data_lib,
-                                        protocol_services)
-                if did:
-                    dids.append(did)
-    return dids
+            lines.append('')
 
-
-def _load_dtc_elements(variants: list):
-    """Load all dtcs found in given variant elements.
-
-    """
-    dtcs = []
-
-    for var in variants:
-        variant_text_id = var.find('QUAL').text
-
-        recorddts = var.findall('DIAGINST/SIMPLECOMPCONT/RECORDDATAOBJ/RECORDDT')
-        # todo - parsing multiple RecorDDTs causes duplicate entries - clarify differences of recoreddts
-
-        for recorddts in recorddts:
-            records = recorddts.findall('RECORD')
-            for record in records:
-                if 'v' not in record.attrib:
-                    continue
-
-                if record.attrib['v'].isnumeric():
-                    dtc_3byte_code = int(record.attrib['v'])
-                else:
-                    # numeric 3 byte code expected
-                    dtc_3byte_code = None
-                    LOGGER.debug("3Byte code unknown for {}".format(id(record)))
-
-                dtc_elem = record.findall('TEXT/TUV')
-                dtc_name = dtc_elem[0].text
-                dtc = Dtc(identifier=dtc_3byte_code,
-                          name=dtc_name)
-                dtc.data_udate({'variant': variant_text_id})
-                dtcs.append(dtc)
-
-    return dtcs
+        return '\n'.join(lines)

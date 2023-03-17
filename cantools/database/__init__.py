@@ -80,7 +80,7 @@ def _load_file_cache(filename: StringPathLike,
                      strict: bool,
                      cache_dir: str,
                      sort_signals: utils.type_sort_signals,
-                     **kwargs,
+                     diagnostics_variant: Optional[str] = None,
                      ) -> Union[can.Database, diagnostics.Database]:
     with open(filename, 'rb') as fin:
         key = fin.read()
@@ -97,7 +97,7 @@ def _load_file_cache(filename: StringPathLike,
                                 prune_choices,
                                 strict,
                                 sort_signals,
-                                **kwargs)
+                                diagnostics_variant)
             cache[key] = database
 
             return database
@@ -209,7 +209,7 @@ def load_file(filename: StringPathLike,
                                 strict,
                                 cache_dir,
                                 sort_signals,
-                                **kwargs)
+                                diagnostics_variant)
 
 
 def dump_file(database,
