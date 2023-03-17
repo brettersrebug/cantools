@@ -18,9 +18,12 @@ class Database(object):
     """
 
     def __init__(self,
-                 dids=None):
+                 protocol_services=None,
+                 dids=None,
+                 dtcs=None):
         self._name_to_did = {}
         self._identifier_to_did = {}
+		self._protocol_services = protocol_services if protocol_services else []
         self._dids = dids if dids else []
         self.refresh()
 
@@ -29,8 +32,41 @@ class Database(object):
         """A list of DIDs in the database.
 
         """
-
         return self._dids
+
+    @property
+    def dtcs(self):
+        """A list of DTCs in the database.
+
+        """
+
+        return self._dtcs
+
+    @property
+    def protcol_services(self):
+        """A list of Protocol services in the database.
+
+        """
+        return self._protocol_services
+
+    def get_dids_of_services(self, service_ids:list = [])->dict:
+        """A list of DIDs of a given list of service identifiers.
+
+        """
+        dids_filtered = {}
+
+        if service_ids:
+            for service_id in service_ids:
+                dids_filtered.update({service_id: []})
+                for ps in self._protocol_services:
+                    if ps.sid == service_id:
+                        dids_filtered[service_id] += ps.dids
+        else:
+            for ps in self._protocol_services:
+                dids_filtered.update({ps.sid:[]})
+                dids_filtered[ps.sid] += ps.dids
+
+        return dids_filtered
 
     def add_cdd(self, fp):
         """Read and parse CDD data from given file-like object and add the
@@ -51,14 +87,16 @@ class Database(object):
         with fopen(filename, 'r', encoding=encoding) as fin:
             self.add_cdd(fin)
 
-    def add_cdd_string(self, string):
+    def add_cdd_string(self, string, diagnostics_variant:str = ''):
         """Parse given CDD data string and add the parsed data to the
         database.
 
         """
 
-        database = cdd.load_string(string)
+        database = cdd.load_string(string, diagnostics_variant)
+        self._protocol_services = database.protocol_services
         self._dids = database.dids
+        self._dtcs = database.dtcs
         self.refresh()
 
     def _add_did(self, did):
@@ -95,6 +133,41 @@ class Database(object):
         """
 
         return self._identifier_to_did.get(identifier, None)
+
+    def _add_dtc(self, dtc):
+        """Add given DTC to the database.
+
+        """
+
+        if dtc.name in self._name_to_dtc:
+            LOGGER.warning("Overwriting DTC with name '%s' in the "
+                           "name to DTC dictionary.",
+                           dtc.name)
+
+        if dtc.identifier in self._identifier_to_dtc:
+            LOGGER.warning(
+                "Overwriting DTC '%s' with '%s' in the identifier to DTC "
+                "dictionary because they have identical identifiers 0x%x.",
+                self._identifier_to_dtc[dtc.identifier].name,
+                dtc.name,
+                dtc.identifier)
+
+        self._name_to_dtc[dtc.name] = dtc
+        self._identifier_to_dtc[dtc.identifier] = dtc
+
+    def get_dtc_by_name(self, name):
+        """Find the DTC object for given name `name`.
+
+        """
+
+        return self._name_to_dtc.get(name, None)
+
+    def get_dtc_by_identifier(self, identifier):
+        """Find the DTC object for given identifier `identifier`.
+
+        """
+
+        return self._identifier_to_dtc.get(identifier, None)
 
     def refresh(self):
         """Refresh the internal database state.
