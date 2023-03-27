@@ -12,11 +12,12 @@ from ...utils import cdd_offset_to_dbc_start_bit
 
 LOGGER = logging.getLogger(__name__)
 
+
 class DCL_ServiceTemplate(object):
     def __init__(self,
-                 id:int,
-                 name:str,
-                 qualifier:str):
+                 id: int,
+                 name: str,
+                 qualifier: str):
         self.id = id
         self.name = name
         self.qualifier = qualifier
@@ -24,10 +25,10 @@ class DCL_ServiceTemplate(object):
 
 class ProtocolService(object):
     def __init__(self,
-                 id:int,
-                 name:str,
-                 sid:int,
-                 qualifier:str):
+                 id: int,
+                 name: str,
+                 sid: int,
+                 qualifier: str):
         self.id = id
         self.name = name
         self.sid = sid
@@ -35,7 +36,7 @@ class ProtocolService(object):
         self.dcl_srv_tmpl = {}
         self.dids = []
 
-    def update_dcl_srv_templates(self, template:dict):
+    def update_dcl_srv_templates(self, template: dict):
         """
 
         Parameters
@@ -67,7 +68,8 @@ class DataType(object):
                  offset,
                  divisor,
                  data_format,
-                 qty):
+                 qty,
+                 sub_elements):
         self.name = name
         self.id_ = id_
         self.bit_length = bit_length
@@ -82,6 +84,7 @@ class DataType(object):
         self.divisor = divisor
         self.data_format = data_format
         self.qty = qty
+        self.sub_elements = sub_elements
 
 
 def _load_choices(data_type):
@@ -98,6 +101,7 @@ def _load_choices(data_type):
         choices = None
 
     return choices
+
 
 def _load_protocol_services(ecu_doc):
     protocol_services_elements = ecu_doc.findall('PROTOCOLSERVICES/PROTOCOLSERVICE')
@@ -129,6 +133,7 @@ def _load_protocol_services(ecu_doc):
 
     return protocol_services
 
+
 def _load_data_types(ecu_doc):
     """Load all data types found in given ECU doc element.
 
@@ -139,7 +144,7 @@ def _load_data_types(ecu_doc):
     types = ecu_doc.findall('DATATYPES/IDENT')
     types += ecu_doc.findall('DATATYPES/LINCOMP')
     types += ecu_doc.findall('DATATYPES/TEXTTBL')
-    
+
     # todo implement full support of datatypes below
     types += ecu_doc.findall('DATATYPES/STRUCTDT')
     types += ecu_doc.findall('DATATYPES/EOSITERDT')
@@ -163,14 +168,10 @@ def _load_data_types(ecu_doc):
 
         # Name and id.
         type_names = data_type.findall('NAME/TUV')
-        if len(type_names) == 1:
-            type_name = type_names[0].text
-        elif len(type_names) > 1:
-            # todo handle STRUCTDT e.g. id='_000002353BFC0FC0'
-            None
-        else:
-            type_name = 'unknown'
-            raise ParseError("'NAME/TUV' of data_type not found for ID: %s" % data_type.attrib['id'])
+        if len(type_names) > 1:
+            raise ParseError("Multiple 'NAME/TUV' entries found for: %s" % data_type.attrib['id'])
+
+        type_name = type_names[0].text
 
         type_id = data_type.attrib['id']
 
@@ -228,6 +229,16 @@ def _load_data_types(ecu_doc):
             offset = 0.0
             divisor = 1.0
 
+        sub_elements = []
+        if data_type.tag == 'STRUCTDT':
+            dataobj_refs = data_type.findall('DATAOBJ')
+            for dataobj_ref in dataobj_refs:
+                idref = dataobj_ref.attrib['dtref']
+                if idref in data_types:
+                    sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+                else:
+                    raise ParseError("Unknown STRUCTDT data_object: {}".format(idref))
+
         data_types[type_id] = DataType(type_name,
                                        type_id,
                                        bit_length,
@@ -241,7 +252,8 @@ def _load_data_types(ecu_doc):
                                        offset,
                                        divisor,
                                        data_format,
-                                       qty)
+                                       qty,
+                                       sub_elements)
 
     return data_types
 
@@ -262,6 +274,29 @@ def _load_data_element(data, offset, data_types):
     #
     dbc_start_bitnum = cdd_offset_to_dbc_start_bit(offset, data_type.bit_length, data_type.byte_order)
 
+    sub_offset = 0  # sub-elements start at offset 0
+    sub_datas = []
+
+    for sub_elem in data_type.sub_elements:
+        sub_data_type = sub_elem[1]
+        sub_dbc_start_bitnum = cdd_offset_to_dbc_start_bit(sub_offset, sub_data_type.bit_length, sub_data_type.byte_order)
+        sub_data = Data(name=sub_elem[0],
+                        start=sub_dbc_start_bitnum,
+                        length=sub_data_type.bit_length,
+                        byte_order=sub_data_type.byte_order,
+                        scale=sub_data_type.factor / sub_data_type.divisor,
+                        offset=sub_data_type.offset,
+                        minimum=sub_data_type.minimum,
+                        maximum=sub_data_type.maximum,
+                        unit=sub_data_type.unit,
+                        choices=sub_data_type.choices,
+                        encoding=sub_data_type.encoding,
+                        data_format=sub_data_type.data_format,
+                        qty=sub_data_type.qty,
+                        sub_elements=sub_data_type.sub_elements)
+        sub_datas.append(sub_data)
+        sub_offset += sub_data_type.bit_length
+
     return Data(name=data.find('QUAL').text,
                 start=dbc_start_bitnum,
                 length=data_type.bit_length,
@@ -274,7 +309,8 @@ def _load_data_element(data, offset, data_types):
                 choices=data_type.choices,
                 encoding=data_type.encoding,
                 data_format=data_type.data_format,
-                qty=data_type.qty)
+                qty=data_type.qty,
+                sub_elements=sub_datas)
 
 
 def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
@@ -323,8 +359,6 @@ def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
                 if tmplref_id in ps.dcl_srv_tmpl:
                     ps.dids.append(did)
 
-
-
     # service.attr['tmplref'] == DCLSRVTMPL.attr['id']
     # DCLSRVTMPL.attr['tmplref'] == PROTOCOLSERVICE.attr['id']
     # PROTOCOLSERVICE/CONSTCOMP.attrib['v'] == SID
@@ -344,7 +378,7 @@ def _load_did_data_refs(ecu_doc: ElementTree.Element) -> Dict[str, ElementTree.E
         return {did.attrib['id']: did for did in dids.findall('DID')}
 
 
-def load_string(string, diagnostics_variant:str = ''):
+def load_string(string, diagnostics_variant: str = ''):
     """Parse given CDD format string.
 
     """
@@ -362,7 +396,7 @@ def load_string(string, diagnostics_variant:str = ''):
     for var in all_variants:
         variant_text_id = var.find('QUAL').text
         if (parse_all_variants == False and
-            (diagnostics_variant.lower() != variant_text_id.lower())):
+                (diagnostics_variant.lower() != variant_text_id.lower())):
             continue
         variants.append(var)
 
@@ -374,6 +408,7 @@ def load_string(string, diagnostics_variant:str = ''):
     dtcs = _load_dtc_elements(variants)
 
     return InternalDatabase(protocol_services=protocol_services, dids=dids, dtcs=dtcs)
+
 
 def _load_did_elements(variants: list, data_types, did_data_lib, protocol_services):
     # var = ecu_doc.findall('ECU')[0].find('VAR')

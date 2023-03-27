@@ -119,18 +119,41 @@ class Did(object):
 
         """
 
-        return decode_data(data,
-                           self.length,
-                           self._codec['datas'],
-                           self._codec['formats'],
-                           decode_choices,
-                           scaling,
-                           allow_truncated)
+        decoded_data = {}
+        for sub_data in self.datas:
+            if sub_data._codec:
+                decoded_data[sub_data.name] = decode_data(
+                    data[sub_data.start // 8: (sub_data.start + sub_data.length) // 8],
+                    sub_data.length // 8,
+                    sub_data._codec['datas'],
+                    sub_data._codec['formats'],
+                    decode_choices,
+                    scaling,
+                    allow_truncated)
+
+        if not decoded_data:
+            decode_data(data,
+                        self.length,
+                        self._codec['datas'],
+                        self._codec['formats'],
+                        decode_choices,
+                        scaling,
+                        allow_truncated)
+
+        return decoded_data
 
     def refresh(self):
         """Refresh the internal DID state.
 
         """
+
+        for sub_data in self.datas:
+            if sub_data.sub_elements:
+                sub_data._codec = {
+                    'datas': sub_data.sub_elements,
+                    'formats': create_encode_decode_formats(sub_data.sub_elements,
+                                                            sub_data.length // 8)
+                }
 
         self._codec = {
             'datas': self._datas,
