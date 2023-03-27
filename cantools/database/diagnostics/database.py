@@ -63,7 +63,8 @@ class Database(object):
                         dids_filtered[service_id] += ps.dids
         else:
             for ps in self._protocol_services:
-                dids_filtered.update({ps.sid:[]})
+                if ps.sid not in dids_filtered:
+                    dids_filtered.update({ps.sid:[]})
                 dids_filtered[ps.sid] += ps.dids
 
         return dids_filtered
