@@ -132,13 +132,13 @@ class Did(object):
                     allow_truncated)
 
         if not decoded_data:
-            decode_data(data,
-                        self.length,
-                        self._codec['datas'],
-                        self._codec['formats'],
-                        decode_choices,
-                        scaling,
-                        allow_truncated)
+            decoded_data = decode_data(data,
+                                       self.length,
+                                       self._codec['datas'],
+                                       self._codec['formats'],
+                                       decode_choices,
+                                       scaling,
+                                       allow_truncated)
 
         return decoded_data
 
