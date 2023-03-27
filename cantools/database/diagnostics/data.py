@@ -23,7 +23,8 @@ class Data(object):
                  choices: Optional[Choices] = None,
                  encoding: str = "",
                  data_format: str = "",
-                 qty: str = ""
+                 qty: str = "",
+                 sub_elements: list = [],
                  ) -> None:
         #: The data name as a string.
         self.name: str = name
@@ -71,6 +72,9 @@ class Data(object):
         # ToDo: Remove once types are handled properly.
         self.is_float: bool = False
         self.is_signed: bool = False
+
+        self.sub_elements = sub_elements
+        self._codec = None
 
     def choice_string_to_number(self, string: str) -> int:
         if self.choices is None:
