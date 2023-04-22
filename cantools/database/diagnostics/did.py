@@ -90,6 +90,7 @@ class Did(object):
 
         """
 
+        # todo - encode for sub_elements of STRUCTDT to be added!
         # todo - maybe extend here the data
         encoded = encode_data(data,
                               self._codec['datas'],
@@ -119,26 +120,42 @@ class Did(object):
 
         """
 
-        decoded_data = {}
-        for sub_data in self.datas:
-            if sub_data._codec:
-                decoded_data[sub_data.name] = decode_data(
-                    data[sub_data.start // 8: (sub_data.start + sub_data.length) // 8],
-                    sub_data.length // 8,
-                    sub_data._codec['datas'],
-                    sub_data._codec['formats'],
-                    decode_choices,
-                    scaling,
-                    allow_truncated)
+        # decode all elements - if there are e.g. structures included they will be replaced later
+        decoded_data = decode_data(data,
+                                   self.length,
+                                   self._codec['datas'],
+                                   self._codec['formats'],
+                                   decode_choices,
+                                   scaling,
+                                   allow_truncated)
 
-        if not decoded_data:
-            decoded_data = decode_data(data,
-                                       self.length,
-                                       self._codec['datas'],
-                                       self._codec['formats'],
-                                       decode_choices,
-                                       scaling,
-                                       allow_truncated)
+        # decode sub elements for e.g. datatype STRUCTDT and replace the specifc decoded_data element
+        for sub_data_obj in self.datas:
+            if sub_data_obj._codec:
+                dec_data_list = []
+                _byte_offset = 0
+                _iter_len = sub_data_obj.minimum // sub_data_obj.min_num_of_items
+                for i in range(0, sub_data_obj.max_num_of_items):
+                    _sub_data = data[sub_data_obj.start // 8 + _byte_offset:
+                                     sub_data_obj.start // 8 + _iter_len + _byte_offset]
+
+                    if len(_sub_data) < _iter_len:
+                        if i < sub_data_obj.min_num_of_items:
+                            raise BufferError("Data-Buffer to short to read %d items." % sub_data_obj.min_num_of_items)
+                        break
+                    else:
+                        dec_data_list.append(decode_data(
+                            _sub_data,
+                            len(_sub_data),  # sub_data_obj.length // 8,
+                            sub_data_obj._codec['datas'],
+                            sub_data_obj._codec['formats'],
+                            decode_choices,
+                            scaling,
+                            allow_truncated))
+
+                    _byte_offset += len(_sub_data)
+
+                decoded_data[sub_data_obj.name] = dec_data_list
 
         return decoded_data
 
@@ -147,13 +164,20 @@ class Did(object):
 
         """
 
-        for sub_data in self.datas:
-            if sub_data.sub_elements:
-                sub_data._codec = {
-                    'datas': sub_data.sub_elements,
-                    'formats': create_encode_decode_formats(sub_data.sub_elements,
-                                                            sub_data.length // 8)
-                }
+        for sub_data_obj in self.datas:
+            if sub_data_obj.sub_elements:
+                if sub_data_obj.max_num_of_items > sub_data_obj.min_num_of_items:
+                    sub_data_obj._codec = {
+                        'datas': sub_data_obj.sub_elements,
+                        'formats': create_encode_decode_formats(sub_data_obj.sub_elements,
+                                                                sub_data_obj.minimum // sub_data_obj.min_num_of_items)
+                    }
+                else:
+                    sub_data_obj._codec = {
+                        'datas': sub_data_obj.sub_elements,
+                        'formats': create_encode_decode_formats(sub_data_obj.sub_elements,
+                                                                sub_data_obj.length // 8)
+                    }
 
         self._codec = {
             'datas': self._datas,

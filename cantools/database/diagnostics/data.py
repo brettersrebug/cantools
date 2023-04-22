@@ -19,6 +19,8 @@ class Data(object):
                  offset: float = 0,
                  minimum: Optional[float] = None,
                  maximum: Optional[float] = None,
+                 min_num_of_items: Optional[int] = None,
+                 max_num_of_items: Optional[int] = None,
                  unit: Optional[str] = None,
                  choices: Optional[Choices] = None,
                  encoding: str = "",
@@ -52,6 +54,12 @@ class Data(object):
 
         #: The maximum bytes of the data, or ``None`` if unavailable.
         self.maximum: Optional[float] = maximum
+
+        #: The minimum number of items (iterations) or ``None`` if unavailable.
+        self.min_num_of_items : Optional[float] = min_num_of_items
+
+        #: The maximum number of items (iterations) or ``None`` if unavailable.
+        self.max_num_of_items: Optional[float] = max_num_of_items
 
         #: The unit of the data as a string, or ``None`` if unavailable.
         self.unit = unit

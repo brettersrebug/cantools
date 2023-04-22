@@ -139,7 +139,10 @@ def decode_data(data: bytes,
             break
 
     if allow_truncated and actual_length < expected_length or is_variable_field_size:
-        data = data.ljust(expected_length, b"\xFF")
+        if field.byte_order == "big_endian":
+            data = data.ljust(expected_length, b"\xFF")
+        else:
+            data = data[::-1].rjust(expected_length, b"\xFF")
 
     unpacked = {
         **formats.big_endian.unpack(bytes(data)),

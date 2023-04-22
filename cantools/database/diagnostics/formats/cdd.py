@@ -1,5 +1,6 @@
 # Load and dump a diagnostics database in CDD format.
 import logging
+import copy
 from typing import Dict
 
 from xml.etree import ElementTree
@@ -62,6 +63,8 @@ class DataType(object):
                  encoding,
                  minimum,
                  maximum,
+                 min_num_of_items,
+                 max_num_of_items,
                  choices,
                  byte_order,
                  unit,
@@ -77,6 +80,8 @@ class DataType(object):
         self.encoding = encoding
         self.minimum = minimum
         self.maximum = maximum
+        self.min_num_of_items = min_num_of_items
+        self.max_num_of_items = max_num_of_items
         self.choices = choices
         self.byte_order = byte_order
         self.unit = unit
@@ -147,11 +152,13 @@ def _load_data_types(ecu_doc):
     types += ecu_doc.findall('DATATYPES/TEXTTBL')
 
     # todo implement full support of datatypes below
+    types += ecu_doc.findall('DATATYPES/COMPTBL')
+    types += ecu_doc.findall('DATATYPES/MUXDT')
+    types += ecu_doc.findall('DATATYPES/NUMITERDT')
+
     types += ecu_doc.findall('DATATYPES/STRUCTDT')
     types += ecu_doc.findall('DATATYPES/EOSITERDT')
-    types += ecu_doc.findall('DATATYPES/COMPTBL')
-    types += ecu_doc.findall('DATATYPES/NUMITERDT')
-    types += ecu_doc.findall('DATATYPES/MUXDT')
+
 
     for data_type in types:
         # Default values.
@@ -165,19 +172,23 @@ def _load_data_types(ecu_doc):
         encoding = None
         minimum = None
         maximum = None
+        min_num_of_items = None  # used for type EOSITERDT
+        max_num_of_items = None  # used for type EOSITERDT
         qty = None
 
         # Name and id.
-        type_names = data_type.findall('NAME/TUV')
+        type_names = data_type.findall('QUAL')
         if len(type_names) > 1:
-            raise ParseError("Multiple 'NAME/TUV' entries found for: %s" % data_type.attrib['id'])
+            raise ParseError("Multiple 'QUAL' entries found for: %s" % data_type.attrib['id'])
 
         type_name = type_names[0].text
 
-        type_id = data_type.attrib['id']
+        type_id = data_type.attrib.get('id', None)  # for struct objects no id is available
+        min_num_of_items = int(data_type.attrib.get('minNumOfItems', 1))
+        max_num_of_items = int(data_type.attrib.get('maxNumOfItems', 1))
 
         # Load from C-type element.
-        ctype = data_type.find('CVALUETYPE')
+        ctype = data_type.find('CVALUETYPE') # PVALUETYPE Display Format not handled so far
 
         for key, value in ctype.attrib.items():
             if key == 'bl':
@@ -192,15 +203,19 @@ def _load_data_types(ecu_doc):
                 maximum = int(value)
             elif key == 'qty':
                 qty = value
+            elif key == 'bo':
+                if value == '21':
+                    byte_order = 'big_endian'
+                elif value == '12':
+                    byte_order = 'little_endian'
+                else:
+                    raise ParseError("Unknown byte order code: %s" % ctype.attrib['bo'])
             else:
-                LOGGER.debug("Ignoring unsupported attribute '%s'.", key)
-
-        if ctype.attrib['bo'] == '21':
-            byte_order = 'big_endian'
-        elif ctype.attrib['bo'] == '12':
-            byte_order = 'little_endian'
-        else:
-            raise ParseError("Unknown byte order code: %s" % ctype.attrib['bo'])
+                # key == 'sig''sig' ...decimal places - are not supported yet
+                # key == 'sz' ... 'no'/'yes' meaning unclear
+                # e.g. for <PVALUETYPE bl='64' bo='21' enc='dbl' sig='4' df='flt' qty='atom' sz='no' minsz='0' maxsz='255'>
+                # LOGGER.debug("Ignoring unsupported attribute '%s'.", key)
+                pass
 
         # Load from P-type element.
         ptype_unit = data_type.find('PVALUETYPE/UNIT')
@@ -231,14 +246,90 @@ def _load_data_types(ecu_doc):
             divisor = 1.0
 
         sub_elements = []
-        if data_type.tag == 'STRUCTDT':
-            dataobj_refs = data_type.findall('DATAOBJ')
-            for dataobj_ref in dataobj_refs:
-                idref = dataobj_ref.attrib['dtref']
+        if data_type.tag in ['STRUCTDT', 'EOSITERDT']:
+            struct_refs = data_type.findall('STRUCT')
+            for struct_ref in struct_refs:
+                idref = struct_ref.attrib['dtref']
                 if idref in data_types:
-                    sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+                    struct_dt = copy.deepcopy(data_types[idref])
+                    struct_dt.name = struct_ref.find('QUAL').text
+                    struct_dt.id_ = struct_ref.attrib['oid']
+
+                    #dataobj_refs = struct_ref.findall(".")
+                    for child in struct_ref:
+                        if child.tag == 'DATAOBJ':
+                            child_idref = child.attrib['dtref']
+                            if child_idref in data_types:
+                                # struct_dt.sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+                                struct_dt.sub_elements.append((child.find('QUAL').text, data_types[child_idref]))
+                            else:
+                                raise ParseError("Unknown STRUCTDT data_object: {}".format(child_idref))
+                        elif child.tag == 'GAPDATAOBJ':
+                            gapobj = DataType(child.find('QUAL').text,
+                                              child.attrib['oid'],
+                                              int(child.attrib['bl']),
+                                              'uns',
+                                              0,
+                                              (1 << int(child.attrib['bl'])) - 1,
+                                              1,
+                                              1,
+                                              None,
+                                              'big_endian',
+                                              None,
+                                              1,
+                                              0,
+                                              1,
+                                              'dec',
+                                              1,
+                                              [])
+                            struct_dt.sub_elements.append((child.find('QUAL').text, gapobj))
+                            # data_types[child.attrib['oid']] = gapobj
+                        else:
+                            pass # nothing to do
+
+                    # sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+                    sub_elements.append((struct_ref.find('QUAL').text, struct_dt))
                 else:
-                    raise ParseError("Unknown STRUCTDT data_object: {}".format(idref))
+                    raise ParseError("Unknown STRUCTDT/EOSITERDT data_object: {}".format(idref))
+
+            for child in data_type:
+                if child.tag == 'DATAOBJ':
+                    child_idref = child.attrib['dtref']
+                    if child_idref in data_types:
+                        # sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+                        sub_elements.append((child.find('QUAL').text, data_types[child_idref]))
+                    else:
+                        raise ParseError("Unknown DATAOBJ data_object: {}".format(child_idref))
+                elif child.tag == 'GAPDATAOBJ':
+                    gapobj = DataType(child.find('QUAL').text,
+                                      child.attrib['oid'],
+                                      int(child.attrib['bl']),
+                                      'uns',
+                                      0,
+                                      (1 << int(child.attrib['bl'])) - 1,
+                                      1,
+                                      1,
+                                      None,
+                                      'big_endian',
+                                      None,
+                                      1,
+                                      0,
+                                      1,
+                                      'dec',
+                                      1,
+                                      [])
+                    sub_elements.append((child.find('QUAL').text, gapobj))
+                else:
+                    pass # nothing to do
+
+            # dataobj_refs = data_type.findall('DATAOBJ')
+            # for dataobj_ref in dataobj_refs:
+            #     idref = dataobj_ref.attrib['dtref']
+            #     if idref in data_types:
+            #         # sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+            #         sub_elements.append((dataobj_ref.find('QUAL').text, data_types[idref]))
+            #     else:
+            #         raise ParseError("Unknown STRUCTDT data_object: {}".format(idref))
 
         data_types[type_id] = DataType(type_name,
                                        type_id,
@@ -246,6 +337,8 @@ def _load_data_types(ecu_doc):
                                        encoding,
                                        minimum,
                                        maximum,
+                                       min_num_of_items,
+                                       max_num_of_items,
                                        choices,
                                        byte_order,
                                        unit,
@@ -259,12 +352,15 @@ def _load_data_types(ecu_doc):
     return data_types
 
 
-def _load_data_element(data, offset, data_types):
+def _load_data_element(data, name, offset, data_types):
     """Load given signal element and return a signal object.
 
     """
 
-    data_type = data_types.get(data.attrib['dtref'], None)
+    if type(data) == DataType:
+        data_type = data
+    else:
+        data_type = data_types.get(data.attrib['dtref'], None)
 
     if data_type is None:
         return None
@@ -280,6 +376,8 @@ def _load_data_element(data, offset, data_types):
 
     for sub_elem in data_type.sub_elements:
         sub_data_type = sub_elem[1]
+        # if len(sub_elem.sub_elements) > 0:
+        #     None
         sub_dbc_start_bitnum = cdd_offset_to_dbc_start_bit(sub_offset, sub_data_type.bit_length, sub_data_type.byte_order)
         sub_data = Data(name=sub_elem[0],
                         start=sub_dbc_start_bitnum,
@@ -289,6 +387,8 @@ def _load_data_element(data, offset, data_types):
                         offset=sub_data_type.offset,
                         minimum=sub_data_type.minimum,
                         maximum=sub_data_type.maximum,
+                        min_num_of_items=data_type.min_num_of_items,
+                        max_num_of_items=data_type.max_num_of_items,
                         unit=sub_data_type.unit,
                         choices=sub_data_type.choices,
                         encoding=sub_data_type.encoding,
@@ -298,7 +398,7 @@ def _load_data_element(data, offset, data_types):
         sub_datas.append(sub_data)
         sub_offset += sub_data_type.bit_length
 
-    return Data(name=data.find('QUAL').text,
+    return Data(name=name,
                 start=dbc_start_bitnum,
                 length=data_type.bit_length,
                 byte_order=data_type.byte_order,
@@ -306,6 +406,8 @@ def _load_data_element(data, offset, data_types):
                 offset=data_type.offset,
                 minimum=data_type.minimum,
                 maximum=data_type.maximum,
+                min_num_of_items=data_type.min_num_of_items,
+                max_num_of_items=data_type.max_num_of_items,
                 unit=data_type.unit,
                 choices=data_type.choices,
                 encoding=data_type.encoding,
@@ -322,25 +424,102 @@ def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
     offset = 0
     datas = []
     data_objs = []
-    data_objs = diaginst.findall('SIMPLECOMPCONT/DATAOBJ')
-    data_objs += diaginst.findall('SIMPLECOMPCONT/UNION/STRUCT/DATAOBJ')
-    did_data_refs = diaginst.findall('SIMPLECOMPCONT/DIDDATAREF')
+    # data_objs = diaginst.findall('SIMPLECOMPCONT/DATAOBJ')
+    # data_objs += diaginst.findall('SIMPLECOMPCONT/UNION/STRUCT/DATAOBJ')
+    # did_data_refs = diaginst.findall('SIMPLECOMPCONT/DIDDATAREF')
     service_elements = diaginst.findall('SERVICE')
 
-    for data_ref in did_data_refs:
-        try:
-            data_objs += did_data_lib[data_ref.attrib['didRef']].findall('STRUCTURE/DATAOBJ')
-        except KeyError:
-            pass
+    for scomp_child in diaginst.find('SIMPLECOMPCONT'):
+        if scomp_child.tag == 'DATAOBJ':
+            data_objs.append((scomp_child.find('QUAL').text,
+                              scomp_child))
+        elif scomp_child.tag == 'DIDDATAREF':
+            diddata_refs = did_data_lib[scomp_child.attrib['didRef']].findall('STRUCTURE/DATAOBJ')
+            try:
+                for diddataref in diddata_refs:
+                    data_objs.append((diddataref.find('QUAL').text,
+                                      diddataref))
+            except KeyError:
+                pass
+        elif scomp_child.tag == 'STRUCT':
+            idref = scomp_child.attrib['dtref']
+            if idref in data_types:
+                struct_dt = copy.deepcopy(data_types[idref])
+                struct_dt.name = scomp_child.find('QUAL').text
+                struct_dt.id_ = scomp_child.attrib['oid']
 
-    for data_obj in data_objs:
-        data = _load_data_element(data_obj,
-                                  offset,
-                                  data_types)
+                # dataobj_refs = scomp_child.findall(".")
+                for child in scomp_child:  # todo for loop is equal to datatypes - merge
+                    if child.tag == 'DATAOBJ':
+                        child_idref = child.attrib['dtref']
+                        if child_idref in data_types:
+                            # struct_dt.sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+                            struct_dt.sub_elements.append((child.find('QUAL').text, data_types[child_idref]))
+                        else:
+                            raise ParseError("Unknown STRUCTDT data_object: {}".format(child_idref))
+                    elif child.tag == 'GAPDATAOBJ':
+                        gapobj = DataType(child.find('QUAL').text,
+                                          child.attrib['oid'],
+                                          int(child.attrib['bl']),
+                                          'uns',
+                                          0,
+                                          (1 << int(child.attrib['bl'])) - 1,
+                                          1,
+                                          1,
+                                          None,
+                                          'big_endian',
+                                          None,
+                                          1,
+                                          0,
+                                          1,
+                                          'dec',
+                                          1,
+                                          [])
+                        struct_dt.sub_elements.append((child.find('QUAL').text, gapobj))
+                        # data_types[child.attrib['oid']] = gapobj
+                    else:
+                        pass  # nothing to do
 
-        if data:
-            datas.append(data)
-            offset += data.length
+                # sub_elements.append((dataobj_ref.find('NAME/TUV').text, data_types[idref]))
+                # sub_elements.append((scomp_child.find('QUAL').text, struct_dt))
+                data_objs.append((struct_dt.name, struct_dt))
+            else:
+                raise ParseError("Unknown STRUCTDT/EOSITERDT data_object: {}".format(idref))
+        elif scomp_child.tag == 'GAPDATAOBJ':
+            # todo not used it seems... delete?
+            gapobj = DataType(scomp_child.find('QUAL').text,
+                              scomp_child.attrib['oid'],
+                              int(scomp_child.attrib['bl']),
+                              'uns',
+                              0,
+                              (1 << int(scomp_child.attrib['bl'])) - 1,
+                              1,
+                              1,
+                              None,
+                              'big_endian',
+                              None,
+                              1,
+                              0,
+                              1,
+                              'dec',
+                              1,
+                              [])
+            data_objs.append(gapobj)
+        else:
+            pass  # nothing to do
+
+    try:
+        for data_obj in data_objs:
+            data = _load_data_element(data_obj[1],
+                                      data_obj[0],
+                                      offset,
+                                      data_types)
+
+            if data:
+                datas.append(data)
+                offset += data.length
+    except Exception as e:
+        print("nix gut")
 
     did = None
     if len(datas):
@@ -415,6 +594,8 @@ def _load_did_elements(variants: list, data_types, did_data_lib, protocol_servic
     # var = ecu_doc.findall('ECU')[0].find('VAR')
     dids = []
 
+    # todo - think DIDREF without DIAGCLASS - how to handle
+    # todo - think using DIAGCLASS (e.g. Stored Data)
     for var in variants:
         for diag_class in var.findall('DIAGCLASS'):
             for diag_inst in diag_class.findall('DIAGINST'):
