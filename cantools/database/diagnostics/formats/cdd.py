@@ -573,10 +573,12 @@ def load_string(string, diagnostics_variant: str = ''):
         parse_all_variants = True
 
     variants = []
+    variant_names = []
     for var in all_variants:
-        variant_text_id = var.find('QUAL').text
+        variant_name = var.find('QUAL').text
+        variant_names.append(variant_name)
         if (parse_all_variants == False and
-                (diagnostics_variant.lower() != variant_text_id.lower())):
+                (diagnostics_variant.lower() != variant_name.lower())):
             continue
         variants.append(var)
 
@@ -587,7 +589,7 @@ def load_string(string, diagnostics_variant: str = ''):
     dids = _load_did_elements(variants, data_types, did_data_lib, protocol_services)
     dtcs = _load_dtc_elements(variants)
 
-    return InternalDatabase(protocol_services=protocol_services, dids=dids, dtcs=dtcs)
+    return InternalDatabase(protocol_services=protocol_services, variants=variant_names, dids=dids, dtcs=dtcs)
 
 
 def _load_did_elements(variants: list, data_types, did_data_lib, protocol_services):

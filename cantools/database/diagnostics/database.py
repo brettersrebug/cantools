@@ -19,6 +19,7 @@ class Database(object):
 
     def __init__(self,
                  protocol_services=None,
+                 variants=None,
                  dids=None,
                  dtcs=None):
         self._name_to_did = {}
@@ -26,6 +27,7 @@ class Database(object):
         self._name_to_dtc = {}
         self._identifier_to_dtc = {}
         self._protocol_services = protocol_services if protocol_services else []
+        self._variants = variants if variants else []
         self._dids = dids if dids else []
         self._dtcs = dtcs if dtcs else []
         self.refresh()
@@ -46,11 +48,18 @@ class Database(object):
         return self._dtcs
 
     @property
-    def protcol_services(self):
+    def protocol_services(self):
         """A list of Protocol services in the database.
 
         """
         return self._protocol_services
+
+    @property
+    def variants(self):
+        """A list available diagnostics variants.
+
+        """
+        return self._variants
 
     def get_dids_of_services(self, service_ids:list = [])->dict:
         """A list of DIDs of a given list of service identifiers.
@@ -98,9 +107,10 @@ class Database(object):
         """
 
         database = cdd.load_string(string, diagnostics_variant)
-        self._protocol_services = database.protocol_services
-        self._dids = database.dids
-        self._dtcs = database.dtcs
+        self._protocol_services += database.protocol_services
+        self._dids += database.dids
+        self._dtcs += database.dtcs
+        self._variants += database.variants
         self.refresh()
 
     def _add_did(self, did):
