@@ -140,8 +140,9 @@ class Did(object):
                                      sub_data_obj.start // 8 + _iter_len + _byte_offset]
 
                     if len(_sub_data) < _iter_len:
-                        if i < sub_data_obj.min_num_of_items:
+                        if i < sub_data_obj.min_num_of_items and allow_truncated is False:
                             raise BufferError("Data-Buffer to short to read %d items." % sub_data_obj.min_num_of_items)
+                        dec_data_list.append(None)
                         break
                     else:
                         dec_data_list.append(decode_data(
