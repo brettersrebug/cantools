@@ -155,7 +155,11 @@ class Did(object):
 
                     _byte_offset += len(_sub_data)
 
-                decoded_data[sub_data_obj.name] = dec_data_list
+                if sub_data_obj.min_num_of_items == sub_data_obj.max_num_of_items == 1:
+                    # if it is per default a field with size of 1 (min/max) do not use a list as type
+                    decoded_data[sub_data_obj.name] = dec_data_list[0]
+                else:
+                    decoded_data[sub_data_obj.name] = dec_data_list
 
         return decoded_data
 
