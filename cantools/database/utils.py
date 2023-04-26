@@ -140,9 +140,9 @@ def decode_data(data: bytes,
 
     if allow_truncated and actual_length < expected_length or is_variable_field_size:
         if field.byte_order == "big_endian":
-            data = data.ljust(expected_length, b"\xFF")
+            data = bytes(data).ljust(expected_length, b"\xFF")
         else:
-            data = data[::-1].rjust(expected_length, b"\xFF")
+            data = bytes(data[::-1]).rjust(expected_length, b"\xFF")
 
     unpacked = {
         **formats.big_endian.unpack(bytes(data)),
@@ -297,14 +297,14 @@ def create_encode_decode_formats(datas: Sequence[Union["Data", "Signal"]], numbe
     little_fmt, little_padding_mask, little_names = create_little()
 
     try:
-        big_compiled = bitstruct.c.compile(big_fmt, big_names)
+        big_compiled = bitstruct.c.compile(fmt=big_fmt, names=big_names, text_encoding='ascii', text_errors='ignore')
     except Exception as e:
-        big_compiled = bitstruct.compile(big_fmt, big_names)
+        big_compiled = bitstruct.compile(fmt=big_fmt, names=big_names, text_encoding='ascii', text_errors='ignore')
 
     try:
-        little_compiled = bitstruct.c.compile(little_fmt, little_names)
+        little_compiled = bitstruct.c.compile(fmt=little_fmt, names=little_names, text_encoding='ascii', text_errors='ignore')
     except Exception as e:
-        little_compiled = bitstruct.compile(little_fmt, little_names)
+        little_compiled = bitstruct.compile(fmt=little_fmt, names=little_names, text_encoding='ascii', text_errors='ignore')
 
     return Formats(big_compiled,
                    little_compiled,
