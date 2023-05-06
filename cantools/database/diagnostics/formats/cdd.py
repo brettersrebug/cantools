@@ -185,7 +185,7 @@ def _load_data_types(ecu_doc):
 
         type_id = data_type.attrib.get('id', None)  # for struct objects no id is available
         min_num_of_items = int(data_type.attrib.get('minNumOfItems', 1))
-        max_num_of_items = int(data_type.attrib.get('maxNumOfItems', 1))
+        max_num_of_items = int(data_type.attrib.get('maxNumOfItems', min_num_of_items))
 
         # Load from C-type element.
         ctype = data_type.find('CVALUETYPE') # PVALUETYPE Display Format not handled so far
@@ -216,6 +216,9 @@ def _load_data_types(ecu_doc):
                 # e.g. for <PVALUETYPE bl='64' bo='21' enc='dbl' sig='4' df='flt' qty='atom' sz='no' minsz='0' maxsz='255'>
                 # LOGGER.debug("Ignoring unsupported attribute '%s'.", key)
                 pass
+
+        if not maximum:
+            maximum = minimum
 
         # Load from P-type element.
         ptype_unit = data_type.find('PVALUETYPE/UNIT')
@@ -265,23 +268,23 @@ def _load_data_types(ecu_doc):
                             else:
                                 raise ParseError("Unknown STRUCTDT data_object: {}".format(child_idref))
                         elif child.tag == 'GAPDATAOBJ':
-                            gapobj = DataType(child.find('QUAL').text,
-                                              child.attrib['oid'],
-                                              int(child.attrib['bl']),
-                                              'uns',
-                                              0,
-                                              (1 << int(child.attrib['bl'])) - 1,
-                                              1,
-                                              1,
-                                              None,
-                                              'big_endian',
-                                              None,
-                                              1,
-                                              0,
-                                              1,
-                                              'dec',
-                                              1,
-                                              [])
+                            gapobj = DataType(name=child.find('QUAL').text,
+                                              id_=child.attrib['oid'],
+                                              bit_length=int(child.attrib['bl']),
+                                              encoding='uns',
+                                              minimum=0,
+                                              maximum=(1 << int(child.attrib['bl'])) - 1,
+                                              min_num_of_items=1,
+                                              max_num_of_items=1,
+                                              choices=None,
+                                              byte_order='big_endian',
+                                              unit=None,
+                                              factor=1,
+                                              offset=0,
+                                              divisor=1,
+                                              data_format='dec',
+                                              qty=1,
+                                              sub_elements=[])
                             struct_dt.sub_elements.append((child.find('QUAL').text, gapobj))
                             # data_types[child.attrib['oid']] = gapobj
                         else:
@@ -301,23 +304,23 @@ def _load_data_types(ecu_doc):
                     else:
                         raise ParseError("Unknown DATAOBJ data_object: {}".format(child_idref))
                 elif child.tag == 'GAPDATAOBJ':
-                    gapobj = DataType(child.find('QUAL').text,
-                                      child.attrib['oid'],
-                                      int(child.attrib['bl']),
-                                      'uns',
-                                      0,
-                                      (1 << int(child.attrib['bl'])) - 1,
-                                      1,
-                                      1,
-                                      None,
-                                      'big_endian',
-                                      None,
-                                      1,
-                                      0,
-                                      1,
-                                      'dec',
-                                      1,
-                                      [])
+                    gapobj = DataType(name=child.find('QUAL').text,
+                                      id_=child.attrib['oid'],
+                                      bit_length=int(child.attrib['bl']),
+                                      encoding='uns',
+                                      minimum=0,
+                                      maximum=(1 << int(child.attrib['bl'])) - 1,
+                                      min_num_of_items=1,
+                                      max_num_of_items=1,
+                                      choices=None,
+                                      byte_order='big_endian',
+                                      unit=None,
+                                      factor=1,
+                                      offset=0,
+                                      divisor=1,
+                                      data_format='dec',
+                                      qty=1,
+                                      sub_elements=[])
                     sub_elements.append((child.find('QUAL').text, gapobj))
                 else:
                     pass # nothing to do

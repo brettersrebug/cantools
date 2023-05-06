@@ -175,7 +175,7 @@ class Did(object):
                     sub_data_obj._codec = {
                         'datas': sub_data_obj.sub_elements,
                         'formats': create_encode_decode_formats(sub_data_obj.sub_elements,
-                                                                sub_data_obj.minimum // sub_data_obj.min_num_of_items)
+                                                                sub_data_obj.maximum // sub_data_obj.max_num_of_items) # minimum can be 0 use maximum therefore
                     }
                 else:
                     sub_data_obj._codec = {
