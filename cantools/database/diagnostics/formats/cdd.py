@@ -1,16 +1,17 @@
 # Load and dump a diagnostics database in CDD format.
 import logging
 import copy
-from typing import Dict
+from typing import Dict, List
 
 from xml.etree import ElementTree
 
 from ..data import Data
 from ..did import Did
 from ..dtc import Dtc
-from ..internal_database import InternalDatabase
+from ..internal_database import InternalDatabase, Variant, DiagnosticGroup
 from ...errors import ParseError
 from ...utils import cdd_offset_to_dbc_start_bit
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +53,6 @@ class ProtocolService(object):
 
         """
         self.dcl_srv_tmpl.update(template)
-
 
 class DataType(object):
 
@@ -140,7 +140,7 @@ def _load_protocol_services(ecu_doc):
     return protocol_services
 
 
-def _load_data_types(ecu_doc):
+def _load_data_types(ecu_doc)->dict:
     """Load all data types found in given ECU doc element.
 
     """
@@ -419,7 +419,7 @@ def _load_data_element(data, name, offset, data_types):
                 sub_elements=sub_datas)
 
 
-def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
+def _load_diag_inst_element(diaginst, data_types, did_data_lib, protocol_services):
     """Load given DID element and return a did object.
 
     """
@@ -430,7 +430,6 @@ def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
     # data_objs = diaginst.findall('SIMPLECOMPCONT/DATAOBJ')
     # data_objs += diaginst.findall('SIMPLECOMPCONT/UNION/STRUCT/DATAOBJ')
     # did_data_refs = diaginst.findall('SIMPLECOMPCONT/DIDDATAREF')
-    service_elements = diaginst.findall('SERVICE')
 
     for scomp_child in diaginst.find('SIMPLECOMPCONT'):
         if scomp_child.tag == 'DATAOBJ':
@@ -511,18 +510,16 @@ def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
         else:
             pass  # nothing to do
 
-    try:
-        for data_obj in data_objs:
-            data = _load_data_element(data_obj[1],
-                                      data_obj[0],
-                                      offset,
-                                      data_types)
 
-            if data:
-                datas.append(data)
-                offset += data.length
-    except Exception as e:
-        print("nix gut")
+    for data_obj in data_objs:
+        data = _load_data_element(data_obj[1],
+                                  data_obj[0],
+                                  offset,
+                                  data_types)
+
+        if data:
+            datas.append(data)
+            offset += data.length
 
     did = None
     if len(datas):
@@ -533,14 +530,16 @@ def _load_did_element(diaginst, data_types, did_data_lib, protocol_services):
         did = Did(identifier=identifier,
                   name=name,
                   length=length,
-                  datas=datas)
+                  datas=datas
+                  )
 
         service_refs = []
+        service_elements = diaginst.findall('SERVICE')
         for se in service_elements:
             tmplref_id = se.attrib.get('tmplref', None)
             for ps in protocol_services:
                 if tmplref_id in ps.dcl_srv_tmpl:
-                    ps.dids.append(did)
+                    did.protocol_services.append(ps)
 
     # service.attr['tmplref'] == DCLSRVTMPL.attr['id']
     # DCLSRVTMPL.attr['tmplref'] == PROTOCOLSERVICE.attr['id']
@@ -571,59 +570,80 @@ def load_string(string, diagnostics_variant: str = ''):
     all_variants = ecu_doc.findall('ECU/VAR')
 
     # Find the relevant variants
-    parse_all_variants = False
-    if not diagnostics_variant:  # load all variants if no variant was selected
-        parse_all_variants = True
+    parse_all_variants = True
+    # todo - diagnostics_variant remove or use to select
+    # if not diagnostics_variant:  # load all variants if no variant was selected
+    #     parse_all_variants = True
 
-    variants = []
-    variant_names = []
-    for var in all_variants:
-        variant_name = var.find('QUAL').text
-        variant_names.append(variant_name)
-        if (parse_all_variants == False and
-                (diagnostics_variant.lower() != variant_name.lower())):
-            continue
-        variants.append(var)
+    variant_objects = []
+    for var_doc in all_variants:
+        variant_name = var_doc.find('QUAL').text
+        # variant_names.append(variant_name)
+        # if (parse_all_variants == False and
+        #         (diagnostics_variant.lower() != variant_name.lower())):
+        #     continue
+        variant_objects.append(Variant(name=variant_name))
 
     data_types = _load_data_types(ecu_doc)
     did_data_lib = _load_did_data_refs(ecu_doc)
 
     protocol_services = _load_protocol_services(ecu_doc)
-    dids = _load_did_elements(variants, data_types, did_data_lib, protocol_services)
-    dtcs = _load_dtc_elements(variants)
 
-    return InternalDatabase(protocol_services=protocol_services, variants=variant_names, dids=dids, dtcs=dtcs)
+    _load_diag_inst_elements(all_variants, variant_objects, data_types, did_data_lib, protocol_services)
+
+    _load_dtc_elements(all_variants, variant_objects)
+
+    return InternalDatabase(protocol_services=protocol_services, variants=variant_objects)
 
 
-def _load_did_elements(variants: list, data_types, did_data_lib, protocol_services):
+def _load_diag_inst_elements(variant_elements: List[ElementTree.Element], variant_objects:List[Variant], data_types, did_data_lib, protocol_services):
     # var = ecu_doc.findall('ECU')[0].find('VAR')
     dids = []
+    diag_insts = {}
 
     # todo - think DIDREF without DIAGCLASS - how to handle
     # todo - think using DIAGCLASS (e.g. Stored Data)
-    for var in variants:
-        for diag_class in var.findall('DIAGCLASS'):
+
+    for i in range(0, len(variant_elements)):
+        variant_element = variant_elements[i]
+        variant_objects[i].diag_groups = {}
+        for diag_class in variant_element.findall('DIAGCLASS'):
+            # dcl_tmpl_ref = diag_class.attrib.get('tmplref', None)
+            dcl_name = diag_class.find('QUAL').text
+            variant_objects[i].diag_groups[dcl_name] = []
             for diag_inst in diag_class.findall('DIAGINST'):
-                did = _load_did_element(diag_inst,
-                                        data_types,
-                                        did_data_lib,
-                                        protocol_services)
+                diag_inst_id = diag_inst.attrib.get('id', None)
+                did = _load_diag_inst_element(diag_inst,
+                                              data_types,
+                                              did_data_lib,
+                                              protocol_services)
                 if did:
-                    dids.append(did)
-    return dids
+                    diag_insts[diag_inst_id] = did
+                    variant_objects[i].diag_groups[dcl_name].append(did)
 
+    for i in range(0, len(variant_elements)):
+        variant_element = variant_elements[i]
+        for diag_class in variant_element.findall('DIAGCLASS'):
+            # dcl_tmpl_ref = diag_class.attrib.get('tmplref', None)
+            dcl_name = diag_class.find('QUAL').text
+            for diag_inst_ref in diag_class.findall('DIAGINSTREF'):
+                di_ref_id = diag_inst_ref.attrib.get('idref', None)
+                did = diag_insts.get(di_ref_id, None)
+                if did:
+                    variant_objects[i].diag_groups[dcl_name].append(did)
 
-def _load_dtc_elements(variants: list):
+def _load_dtc_elements(variant_elements: List[ElementTree.Element], variant_objects:List[Variant]):
     """Load all dtcs found in given variant elements.
 
     """
-    dtcs = []
 
-    for var in variants:
+    for i in range(0, len(variant_elements)):
+        dtcs = []
+
+        var = variant_elements[i]
         variant_text_id = var.find('QUAL').text
 
         recorddts = var.findall('DIAGINST/SIMPLECOMPCONT/RECORDDATAOBJ/RECORDDT')
-        # todo - parsing multiple RecorDDTs causes duplicate entries - clarify differences of recoreddts
 
         for recorddts in recorddts:
             records = recorddts.findall('RECORD')
@@ -642,7 +662,8 @@ def _load_dtc_elements(variants: list):
                 dtc_name = dtc_elem[0].text
                 dtc = Dtc(identifier=dtc_3byte_code,
                           name=dtc_name)
-                dtc.data_udate({'variant': variant_text_id})
+                dtc.data_udate({'id_hex': hex(dtc_3byte_code)})
                 dtcs.append(dtc)
 
-    return dtcs
+            variant_objects[i].dtcs = dtcs
+

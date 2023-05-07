@@ -22,6 +22,7 @@ class Did(object):
         self._length = length
         self._datas = datas
         self._codec = None
+        self._protocol_services = []
         self.refresh()
 
     @property
@@ -59,6 +60,14 @@ class Did(object):
     @length.setter
     def length(self, value):
         self._length = value
+
+    @property
+    def protocol_services(self):
+        """The protocol_service as ProtocolService.
+
+        """
+
+        return self._protocol_services
 
     @property
     def datas(self):
