@@ -85,7 +85,7 @@ class Database(object):
 
     def get_dids_of_services(self,
                              service_ids:List[int] = [],
-                             diagnostics_groups:List[str] = [],
+                             diagnostic_groups:List[str] = [],
                              did_dict_repr:bool = False) -> Dict[int, list]:
         """A list of DIDs of a given list of service identifiers and diagnostics groups.
 
@@ -93,8 +93,8 @@ class Database(object):
         ----------
         service_ids:List[int]
             the protocol service ids to be filtered. If [] or None - all service ids are returned.
-        diagnostics_groups:List[str]
-            the diagnostics groups to be filtered. If [] or None - no filtering on groups will be performed.
+        diagnostic_groups:List[str]
+            the diagnostic groups to be filtered. If [] or None - no filtering on groups will be performed.
 
         Returns
         -------
@@ -107,7 +107,7 @@ class Database(object):
                 dids_filtered.update({service_id: []})
 
             for (diag_grp_name, diag_grp) in self._selected_variant.diag_groups.items():
-                if not diagnostics_groups or diag_grp_name in diagnostics_groups:
+                if not diagnostic_groups or diag_grp_name in diagnostic_groups:
                     for did in diag_grp:
                         for ps in did.protocol_services:
                             if ps.sid in service_ids:
@@ -120,7 +120,7 @@ class Database(object):
                                     dids_filtered[ps.sid].append(did)
         else:
             for (diag_grp_name, diag_grp)  in self._selected_variant.diag_groups.items():
-                if not diagnostics_groups or diag_grp_name in diagnostics_groups:
+                if not diagnostic_groups or diag_grp_name in diagnostic_groups:
                     for did in diag_grp:
                         for ps in did.protocol_services:
                             if ps.sid not in dids_filtered:
