@@ -180,7 +180,7 @@ class Did(object):
 
         for sub_data_obj in self.datas:
             if sub_data_obj.sub_elements:
-                if sub_data_obj.qty =='field':
+                if sub_data_obj.qty == 'field' and sub_data_obj.max_num_of_items and sub_data_obj.maximum:
                     sub_data_obj._codec = {
                         'datas': sub_data_obj.sub_elements,
                         'formats': create_encode_decode_formats(sub_data_obj.sub_elements,
