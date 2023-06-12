@@ -67,7 +67,7 @@ class Data(object):
         #: The data_format of the data as a string 'hex', 'text', 'flt', 'dec'
         self.data_format = data_format
 
-        #: The encoding of the data as a string 'asc', 'uns', 'dbl',
+        #: The encoding of the data as a string 'asc', 'uns', 'dbl', 'flt,
         self.encoding = encoding
 
         #: The quantity of the data as a string 'atom', 'field', or ``None`` if unavailable.
@@ -79,6 +79,10 @@ class Data(object):
 
         # ToDo: Remove once types are handled properly.
         self.is_float: bool = False
+
+        if self.encoding == 'flt' or self.data_format == 'flt':
+            self.is_float: bool = True
+
         self.is_signed: bool = False
 
         self.sub_elements = sub_elements
