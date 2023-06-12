@@ -37,7 +37,6 @@ class ProtocolService(object):
         self.sid = sid
         self.qualifier = qualifier
         self.dcl_srv_tmpl = {}
-        self.dids = []
 
     def update_dcl_srv_templates(self, template: dict):
         """
@@ -97,8 +96,13 @@ def _load_choices(data_type):
     choices = {}
 
     for choice in data_type.findall('TEXTMAP'):
-        start = int(choice.attrib['s'].strip('()'))
-        end = int(choice.attrib['e'].strip('()'))
+        try:
+            start = int(choice.attrib['s'].strip('()'))
+            end = int(choice.attrib['e'].strip('()'))
+        except Exception as e:
+            # e.g. 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+            start = eval(choice.attrib['s'].strip('()'))
+            end = eval(choice.attrib['e'].strip('()'))
 
         if start == end:
             choices[start] = choice.find('TEXT/TUV[1]').text
@@ -506,7 +510,7 @@ def _load_diag_inst_element(diaginst, data_types, did_data_lib, protocol_service
                               'dec',
                               1,
                               [])
-            data_objs.append(gapobj)
+            data_objs.append((scomp_child.find('QUAL').text, gapobj))
         else:
             pass  # nothing to do
 
