@@ -338,23 +338,23 @@ def _load_data_types(ecu_doc)->dict:
             #     else:
             #         raise ParseError("Unknown STRUCTDT data_object: {}".format(idref))
 
-        data_types[type_id] = DataType(type_name,
-                                       type_id,
-                                       bit_length,
-                                       encoding,
-                                       minimum,
-                                       maximum,
-                                       min_num_of_items,
-                                       max_num_of_items,
-                                       choices,
-                                       byte_order,
-                                       unit,
-                                       factor,
-                                       offset,
-                                       divisor,
-                                       data_format,
-                                       qty,
-                                       sub_elements)
+        data_types[type_id] = DataType(name=type_name,
+                                       id_=type_id,
+                                       bit_length=bit_length,
+                                       encoding=encoding,
+                                       minimum=minimum,
+                                       maximum=maximum,
+                                       min_num_of_items=min_num_of_items,
+                                       max_num_of_items=max_num_of_items,
+                                       choices=choices,
+                                       byte_order=byte_order,
+                                       unit=unit,
+                                       factor=factor,
+                                       offset=offset,
+                                       divisor=divisor,
+                                       data_format=data_format,
+                                       qty=qty,
+                                       sub_elements=sub_elements)
 
     return data_types
 
@@ -464,23 +464,23 @@ def _load_diag_inst_element(diaginst, data_types, did_data_lib, protocol_service
                         else:
                             raise ParseError("Unknown STRUCTDT data_object: {}".format(child_idref))
                     elif child.tag == 'GAPDATAOBJ':
-                        gapobj = DataType(child.find('QUAL').text,
-                                          child.attrib['oid'],
-                                          int(child.attrib['bl']),
-                                          'uns',
-                                          0,
-                                          (1 << int(child.attrib['bl'])) - 1,
-                                          1,
-                                          1,
-                                          None,
-                                          'big_endian',
-                                          None,
-                                          1,
-                                          0,
-                                          1,
-                                          'dec',
-                                          1,
-                                          [])
+                        gapobj = DataType(name=child.find('QUAL').text,
+                                          id_=child.attrib['oid'],
+                                          bit_length=int(child.attrib['bl']),
+                                          encoding='uns',
+                                          minimum=0,
+                                          maximum=(1 << int(child.attrib['bl'])) - 1,
+                                          min_num_of_items=1,
+                                          max_num_of_items=1,
+                                          choices=None,
+                                          byte_order='big_endian',
+                                          unit=None,
+                                          factor=1,
+                                          offset=0,
+                                          divisor=1,
+                                          data_format='dec',
+                                          qty=1,
+                                          sub_elements=[])
                         struct_dt.sub_elements.append((child.find('QUAL').text, gapobj))
                         # data_types[child.attrib['oid']] = gapobj
                     else:
@@ -493,23 +493,23 @@ def _load_diag_inst_element(diaginst, data_types, did_data_lib, protocol_service
                 raise ParseError("Unknown STRUCTDT/EOSITERDT data_object: {}".format(idref))
         elif scomp_child.tag == 'GAPDATAOBJ':
             # todo not used it seems... delete?
-            gapobj = DataType(scomp_child.find('QUAL').text,
-                              scomp_child.attrib['oid'],
-                              int(scomp_child.attrib['bl']),
-                              'uns',
-                              0,
-                              (1 << int(scomp_child.attrib['bl'])) - 1,
-                              1,
-                              1,
-                              None,
-                              'big_endian',
-                              None,
-                              1,
-                              0,
-                              1,
-                              'dec',
-                              1,
-                              [])
+            gapobj = DataType(name=scomp_child.find('QUAL').text,
+                              id_=scomp_child.attrib['oid'],
+                              bit_length=int(scomp_child.attrib['bl']),
+                              encoding='uns',
+                              minimum=0,
+                              maximum=(1 << int(scomp_child.attrib['bl'])) - 1,
+                              min_num_of_items=1,
+                              max_num_of_items=1,
+                              choices=None,
+                              byte_order='big_endian',
+                              unit=None,
+                              factor=1,
+                              offset=0,
+                              divisor=1,
+                              data_format='dec',
+                              qty=1,
+                              sub_elements=[])
             data_objs.append((scomp_child.find('QUAL').text, gapobj))
         else:
             pass  # nothing to do
