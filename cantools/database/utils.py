@@ -223,6 +223,10 @@ def create_encode_decode_formats(datas: Sequence[Union["Data", "Signal"]], numbe
     def data_item(data: Union["Data", "Signal"]) -> Tuple[str, str, str]:
         fmt = '{}{}'.format(get_format_string_type(data),
                             data.length)
+        ## not working - just keep as a reminder
+        # fmt = '{}{}{}'.format('<' if data.byte_order == 'big_endian' else '>',
+        #                       get_format_string_type(data),
+        #                       data.length)
         padding_mask = '0' * data.length
 
         return fmt, padding_mask, data.name
@@ -295,6 +299,10 @@ def create_encode_decode_formats(datas: Sequence[Union["Data", "Signal"]], numbe
 
     big_fmt, big_padding_mask, big_names = create_big()
     little_fmt, little_padding_mask, little_names = create_little()
+
+    ## not working - just keep as a reminder
+    # big_fmt += '<'
+    # little_fmt += '>'
 
     try:
         big_compiled = bitstruct.c.compile(fmt=big_fmt, names=big_names, text_encoding='ascii', text_errors='ignore')
