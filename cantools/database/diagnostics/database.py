@@ -84,9 +84,9 @@ class Database(object):
         return self._selected_variant.name
 
     def get_dids_of_services(self,
-                             service_ids:List[int] = [],
-                             diagnostic_groups:List[str] = [],
-                             did_dict_repr:bool = False) -> Dict[int, list]:
+                             service_ids: List[int] = [],
+                             diagnostic_groups: List[str] = [],
+                             did_dict_repr: bool = False) -> Dict[int, list]:
         """A list of DIDs of a given list of service identifiers and diagnostics groups.
 
         Parameters
@@ -114,8 +114,9 @@ class Database(object):
                                 if did_dict_repr:
                                     dids_filtered[ps.sid].append({
                                         'name': did.name,
-                                        'id': '{}'.format(did.identifier),
-                                        'id_hex': '0x{:04X}'.format(did.identifier)})
+                                        'id': did.identifier,
+                                        'id_hex': '0x{:04X}'.format(did.identifier),
+                                        'diag_group': diag_grp_name})
                                 else:
                                     dids_filtered[ps.sid].append(did)
         else:
@@ -128,8 +129,9 @@ class Database(object):
                             if did_dict_repr:
                                 dids_filtered[ps.sid].append({
                                     'name': did.name,
-                                    'id': '{}'.format(did.identifier),
-                                    'id_hex': '0x{:04X}'.format(did.identifier)})
+                                    'id': did.identifier,
+                                    'id_hex': '0x{:04X}'.format(did.identifier),
+                                    'diag_group': diag_grp_name})
                             else:
                                 dids_filtered[ps.sid].append(did)
 
